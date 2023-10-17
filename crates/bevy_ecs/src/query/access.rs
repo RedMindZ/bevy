@@ -515,7 +515,7 @@ impl<T: SparseSetIndex> FilteredAccessSet<T> {
         if !self.combined_access.is_compatible(other.combined_access()) {
             for filtered in &self.filtered_accesses {
                 for other_filtered in &other.filtered_accesses {
-                    conflicts.extend(filtered.get_conflicts(other_filtered).into_iter());
+                    conflicts.extend(filtered.get_conflicts(other_filtered));
                 }
             }
         }
@@ -528,7 +528,7 @@ impl<T: SparseSetIndex> FilteredAccessSet<T> {
         let mut conflicts = HashSet::new();
         if !self.combined_access.is_compatible(filtered_access.access()) {
             for filtered in &self.filtered_accesses {
-                conflicts.extend(filtered.get_conflicts(filtered_access).into_iter());
+                conflicts.extend(filtered.get_conflicts(filtered_access));
             }
         }
         conflicts.into_iter().collect()

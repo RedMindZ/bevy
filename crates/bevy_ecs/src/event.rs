@@ -901,7 +901,7 @@ mod tests {
     #[test]
     fn test_events_drain_and_read() {
         events_clear_and_read_impl(|events| {
-            assert!(events.drain().eq(vec![E(0), E(1)].into_iter()));
+            assert!(events.drain().eq(vec![E(0), E(1)]));
         });
     }
 

@@ -684,7 +684,7 @@ impl MultiThreadedExecutor {
 }
 
 fn apply_deferred(
-    unapplied_systems: &Vec<usize>,
+    unapplied_systems: &[usize],
     systems: &[SyncUnsafeCell<BoxedSystem>],
     world: &mut World,
 ) -> Result<(), Box<dyn std::any::Any + Send>> {
