@@ -339,7 +339,7 @@ impl MultiThreadedExecutor {
 
             self.running_systems.insert(system_index);
             self.num_running_systems += 1;
-            
+
             if self.system_task_metadata[system_index].is_exclusive {
                 // SAFETY: `can_run` returned true for this system, which means
                 // that no other systems currently have access to the world.
@@ -355,7 +355,7 @@ impl MultiThreadedExecutor {
                 self.unapplied_systems.push(system_index);
                 break;
             }
-            
+
             // SAFETY:
             // - No other reference to this system exists.
             // - `can_run` has been called, which calls `update_archetype_component_access` with this system.
