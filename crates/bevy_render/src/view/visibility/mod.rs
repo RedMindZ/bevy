@@ -139,9 +139,9 @@ impl ViewVisibility {
 pub struct VisibilityBundle {
     /// The visibility of the entity.
     pub visibility: Visibility,
-    // The inherited visibility of the entity.
+    /// The inherited visibility of the entity.
     pub inherited_visibility: InheritedVisibility,
-    // The computed visibility of the entity.
+    /// The computed visibility of the entity.
     pub view_visibility: ViewVisibility,
 }
 
