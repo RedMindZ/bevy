@@ -664,8 +664,8 @@ pub type MeshVertexBufferLayout = Hashed<InnerMeshVertexBufferLayout>;
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct InnerMeshVertexBufferLayout {
-    attribute_ids: Vec<MeshVertexAttributeId>,
-    layout: VertexBufferLayout,
+    pub attribute_ids: Vec<MeshVertexAttributeId>,
+    pub layout: VertexBufferLayout,
 }
 
 impl InnerMeshVertexBufferLayout {
