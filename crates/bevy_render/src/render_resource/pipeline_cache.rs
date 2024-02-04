@@ -834,7 +834,7 @@ impl PipelineCache {
         self.pipelines = pipelines;
     }
 
-    pub(crate) fn process_pipeline_queue_system(mut cache: ResMut<Self>) {
+    pub fn process_pipeline_queue_system(mut cache: ResMut<Self>) {
         cache.process_queue();
     }
 
