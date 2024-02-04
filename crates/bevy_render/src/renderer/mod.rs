@@ -35,6 +35,7 @@ pub fn render_system(world: &mut World) {
         render_device.clone(), // TODO: is this clone really necessary?
         &render_queue.0,
         world,
+        None,
         |encoder| {
             crate::view::screenshot::submit_screenshot_commands(world, encoder);
         },

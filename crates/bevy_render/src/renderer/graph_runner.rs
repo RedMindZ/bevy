@@ -16,7 +16,7 @@ use crate::{
     renderer::{RenderContext, RenderDevice},
 };
 
-pub(crate) struct RenderGraphRunner;
+pub struct RenderGraphRunner;
 
 #[derive(Error, Debug)]
 pub enum RenderGraphRunnerError {
@@ -57,10 +57,11 @@ impl RenderGraphRunner {
         render_device: RenderDevice,
         queue: &wgpu::Queue,
         world: &World,
+        view_entity: Option<Entity>,
         finalizer: impl FnOnce(&mut wgpu::CommandEncoder),
     ) -> Result<(), RenderGraphRunnerError> {
         let mut render_context = RenderContext::new(render_device);
-        Self::run_graph(graph, None, &mut render_context, world, &[], None)?;
+        Self::run_graph(graph, None, &mut render_context, world, &[], view_entity)?;
         finalizer(render_context.command_encoder());
 
         {
