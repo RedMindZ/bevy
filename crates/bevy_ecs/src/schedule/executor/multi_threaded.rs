@@ -108,7 +108,7 @@ pub struct MultiThreadedExecutor {
     /// Systems whose conditions have been evaluated and were run or skipped.
     completed_systems: FixedBitSet,
     /// Systems that have run but have not had their buffers applied.
-    unapplied_systems: FixedBitSet,
+    unapplied_systems: Vec<usize>,
     /// Setting when true applies deferred system buffers after all systems have run
     apply_final_deferred: bool,
     /// When set, tells the executor that a thread has panicked.
@@ -143,7 +143,7 @@ impl SystemExecutor for MultiThreadedExecutor {
         self.running_systems = FixedBitSet::with_capacity(sys_count);
         self.completed_systems = FixedBitSet::with_capacity(sys_count);
         self.skipped_systems = FixedBitSet::with_capacity(sys_count);
-        self.unapplied_systems = FixedBitSet::with_capacity(sys_count);
+        self.unapplied_systems = Vec::with_capacity(sys_count);
 
         self.system_task_metadata = Vec::with_capacity(sys_count);
         for index in 0..sys_count {
@@ -270,7 +270,6 @@ impl SystemExecutor for MultiThreadedExecutor {
                 *panic_payload = Some(payload);
             }
             self.unapplied_systems.clear();
-            debug_assert!(self.unapplied_systems.is_clear());
         }
 
         // check to see if there was a panic
@@ -315,7 +314,7 @@ impl MultiThreadedExecutor {
             running_systems: FixedBitSet::new(),
             skipped_systems: FixedBitSet::new(),
             completed_systems: FixedBitSet::new(),
-            unapplied_systems: FixedBitSet::new(),
+            unapplied_systems: Vec::new(),
             apply_final_deferred: true,
             panic_payload: Arc::new(Mutex::new(None)),
             stop_spawning: false,
@@ -379,6 +378,10 @@ impl MultiThreadedExecutor {
                 unsafe {
                     self.spawn_exclusive_system_task(scope, system_index, systems, world);
                 }
+                // NOTE: Because `spawn_exclusive_system_task` applies the deferred systems,
+                //       we must only add the system to the unapplied systems after it has
+                //       executed, since otherwise we would apply it twice.
+                self.unapplied_systems.push(system_index);
                 break;
             }
 
@@ -389,6 +392,7 @@ impl MultiThreadedExecutor {
             unsafe {
                 self.spawn_system_task(scope, system_index, systems, world_cell);
             }
+            self.unapplied_systems.push(system_index);
         }
 
         // give back
@@ -665,7 +669,7 @@ impl MultiThreadedExecutor {
         self.num_completed_systems += 1;
         self.running_systems.set(system_index, false);
         self.completed_systems.insert(system_index);
-        self.unapplied_systems.insert(system_index);
+        // self.unapplied_systems.insert(system_index);
 
         self.signal_dependents(system_index);
 
@@ -709,11 +713,11 @@ impl MultiThreadedExecutor {
 }
 
 fn apply_deferred(
-    unapplied_systems: &FixedBitSet,
+    unapplied_systems: &[usize],
     systems: &[SyncUnsafeCell<BoxedSystem>],
     world: &mut World,
-) -> Result<(), Box<dyn Any + Send>> {
-    for system_index in unapplied_systems.ones() {
+) -> Result<(), Box<dyn std::any::Any + Send>> {
+    for &system_index in unapplied_systems.iter() {
         // SAFETY: none of these systems are running, no other references exist
         let system = unsafe { &mut *systems[system_index].get() };
         let res = std::panic::catch_unwind(AssertUnwindSafe(|| {

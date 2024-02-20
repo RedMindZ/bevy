@@ -38,6 +38,7 @@ pub fn render_system(world: &mut World, state: &mut SystemState<Query<Entity, Wi
         &render_queue.0,
         &render_adapter.0,
         world,
+        None,
         |encoder| {
             crate::view::screenshot::submit_screenshot_commands(world, encoder);
         },

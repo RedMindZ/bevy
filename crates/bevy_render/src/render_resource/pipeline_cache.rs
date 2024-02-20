@@ -903,7 +903,7 @@ impl PipelineCache {
         self.waiting_pipelines.insert(id);
     }
 
-    pub(crate) fn process_pipeline_queue_system(mut cache: ResMut<Self>) {
+    pub fn process_pipeline_queue_system(mut cache: ResMut<Self>) {
         cache.process_queue();
     }
 

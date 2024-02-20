@@ -19,7 +19,7 @@ pub struct SingleThreadedExecutor {
     /// Systems that have run or been skipped.
     completed_systems: FixedBitSet,
     /// Systems that have run but have not had their buffers applied.
-    unapplied_systems: FixedBitSet,
+    unapplied_systems: Vec<usize>,
     /// Setting when true applies deferred system buffers after all systems have run
     apply_final_deferred: bool,
 }
@@ -35,7 +35,7 @@ impl SystemExecutor for SingleThreadedExecutor {
         let set_count = schedule.set_ids.len();
         self.evaluated_sets = FixedBitSet::with_capacity(set_count);
         self.completed_systems = FixedBitSet::with_capacity(sys_count);
-        self.unapplied_systems = FixedBitSet::with_capacity(sys_count);
+        self.unapplied_systems = Vec::with_capacity(sys_count);
     }
 
     fn run(
@@ -104,7 +104,7 @@ impl SystemExecutor for SingleThreadedExecutor {
                     eprintln!("Encountered a panic in system `{}`!", &*system.name());
                     std::panic::resume_unwind(payload);
                 }
-                self.unapplied_systems.insert(system_index);
+                self.unapplied_systems.push(system_index);
             }
         }
 
@@ -128,13 +128,13 @@ impl SingleThreadedExecutor {
         Self {
             evaluated_sets: FixedBitSet::new(),
             completed_systems: FixedBitSet::new(),
-            unapplied_systems: FixedBitSet::new(),
+            unapplied_systems: Vec::new(),
             apply_final_deferred: true,
         }
     }
 
     fn apply_deferred(&mut self, schedule: &mut SystemSchedule, world: &mut World) {
-        for system_index in self.unapplied_systems.ones() {
+        for &system_index in self.unapplied_systems.iter() {
             let system = &mut schedule.systems[system_index];
             system.apply_deferred(world);
         }

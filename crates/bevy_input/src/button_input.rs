@@ -50,6 +50,8 @@ pub struct ButtonInput<T: Copy + Eq + Hash + Send + Sync + 'static> {
     pressed: HashSet<T>,
     /// A collection of every button that has just been pressed.
     just_pressed: HashSet<T>,
+    /// A collection of every button that has just been pressed or repeated.
+    just_pressed_or_repeated: HashSet<T>,
     /// A collection of every button that has just been released.
     just_released: HashSet<T>,
 }
@@ -59,6 +61,7 @@ impl<T: Copy + Eq + Hash + Send + Sync + 'static> Default for ButtonInput<T> {
         Self {
             pressed: Default::default(),
             just_pressed: Default::default(),
+            just_pressed_or_repeated: Default::default(),
             just_released: Default::default(),
         }
     }
@@ -74,6 +77,7 @@ where
         if self.pressed.insert(input) {
             self.just_pressed.insert(input);
         }
+        self.just_pressed_or_repeated.insert(input);
     }
 
     /// Returns `true` if the `input` has been pressed.
@@ -122,6 +126,23 @@ where
         self.just_pressed.remove(&input)
     }
 
+    /// Returns `true` if the `input` has just been pressed or repeated.
+    pub fn just_pressed_or_repeated(&self, input: T) -> bool {
+        self.just_pressed_or_repeated.contains(&input)
+    }
+
+    /// Returns `true` if any item in `inputs` has just been pressed or repeated.
+    pub fn any_just_pressed_or_repeated(&self, inputs: impl IntoIterator<Item = T>) -> bool {
+        inputs.into_iter().any(|it| self.just_pressed_or_repeated(it))
+    }
+
+    /// Clears the `just_pressed_or_repeated` state of the `input` and returns `true` if the `input` has just been pressed or repeated.
+    ///
+    /// Future calls to [`Input::just_pressed_or_repeated`] for the given input will return false until a new press event occurs.
+    pub fn clear_just_pressed_or_repeated(&mut self, input: T) -> bool {
+        self.just_pressed_or_repeated.remove(&input)
+    }
+
     /// Returns `true` if the `input` has just been released.
     pub fn just_released(&self, input: T) -> bool {
         self.just_released.contains(&input)
@@ -143,6 +164,7 @@ where
     pub fn reset(&mut self, input: T) {
         self.pressed.remove(&input);
         self.just_pressed.remove(&input);
+        self.just_pressed_or_repeated.remove(&input);
         self.just_released.remove(&input);
     }
 
@@ -152,6 +174,7 @@ where
     pub fn reset_all(&mut self) {
         self.pressed.clear();
         self.just_pressed.clear();
+        self.just_pressed_or_repeated.clear();
         self.just_released.clear();
     }
 
@@ -160,6 +183,7 @@ where
     /// See also [`ButtonInput::reset_all`] for a full reset.
     pub fn clear(&mut self) {
         self.just_pressed.clear();
+        self.just_pressed_or_repeated.clear();
         self.just_released.clear();
     }
 
@@ -171,6 +195,11 @@ where
     /// An iterator visiting every just pressed input in arbitrary order.
     pub fn get_just_pressed(&self) -> impl ExactSizeIterator<Item = &T> {
         self.just_pressed.iter()
+    }
+
+    /// An iterator visiting every just pressed or repeated input in arbitrary order.
+    pub fn get_just_pressed_or_repeated(&self) -> impl ExactSizeIterator<Item = &T> {
+        self.just_pressed_or_repeated.iter()
     }
 
     /// An iterator visiting every just released input in arbitrary order.
