@@ -178,16 +178,26 @@ impl Plugin for PipelinedRenderingPlugin {
 fn update_rendering(app_world: &mut World, _sub_app: &mut App) {
     app_world.resource_scope(|world, main_thread_executor: Mut<MainThreadExecutor>| {
         world.resource_scope(|world, mut render_channels: Mut<RenderAppChannels>| {
-            // we use a scope here to run any main thread tasks that the render world still needs to run
-            // while we wait for the render world to be received.
-            let mut render_app = ComputeTaskPool::get()
-                .scope_with_executor(true, Some(&*main_thread_executor.0), |s| {
-                    s.spawn(async { render_channels.recv().await });
-                })
-                .pop()
-                .unwrap();
+            let mut render_app = {
+                #[cfg(feature = "trace")]
+                let _wait_span = bevy_utils::tracing::info_span!("wait for render app").entered();
 
-            render_app.extract(world);
+                // we use a scope here to run any main thread tasks that the render world still needs to run
+                // while we wait for the render world to be received.
+                ComputeTaskPool::get()
+                    .scope_with_executor(true, Some(&*main_thread_executor.0), |s| {
+                        s.spawn(async { render_channels.recv().await });
+                    })
+                    .pop()
+                    .unwrap()
+            };
+
+            {
+                #[cfg(feature = "trace")]
+                let _extract_span =
+                    bevy_utils::tracing::info_span!("extract to render app").entered();
+                render_app.extract(world);
+            }
 
             render_channels.send_blocking(render_app);
         });
