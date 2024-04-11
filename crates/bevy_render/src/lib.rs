@@ -249,7 +249,7 @@ impl Plugin for RenderPlugin {
                 unsafe { initialize_render_app(app) };
             }
             RenderCreation::Automatic(render_creation) => {
-                if let Some(backends) = render_creation.backends {
+                if let Some(backends) = &render_creation.backends {
                     let future_renderer_resources_wrapper = Arc::new(Mutex::new(None));
                     app.insert_resource(FutureRendererResources(
                         future_renderer_resources_wrapper.clone(),
@@ -262,12 +262,8 @@ impl Plugin for RenderPlugin {
 
                     let settings = render_creation.clone();
                     let async_renderer = async move {
-                        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                            backends,
-                            dx12_shader_compiler: settings.dx12_shader_compiler.clone(),
-                            flags: settings.instance_flags,
-                            gles_minor_version: settings.gles3_minor_version,
-                        });
+                        let instance = renderer::create_instance(backends, &settings)
+                            .expect("None of the requested graphics backends are available");
 
                         // SAFETY: Plugins should be set up on the main thread.
                         let surface = primary_window.map(|wrapper| unsafe {

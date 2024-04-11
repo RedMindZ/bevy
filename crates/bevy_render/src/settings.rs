@@ -4,7 +4,7 @@ use crate::renderer::{
 use std::borrow::Cow;
 
 pub use wgpu::{
-    Backends, Dx12Compiler, Features as WgpuFeatures, Gles3MinorVersion, InstanceFlags,
+    Backend, Backends, Dx12Compiler, Features as WgpuFeatures, Gles3MinorVersion, InstanceFlags,
     Limits as WgpuLimits, PowerPreference,
 };
 
@@ -31,7 +31,7 @@ pub enum WgpuSettingsPriority {
 #[derive(Clone)]
 pub struct WgpuSettings {
     pub device_label: Option<Cow<'static, str>>,
-    pub backends: Option<Backends>,
+    pub backends: Option<Vec<Backend>>,
     pub power_preference: PowerPreference,
     pub priority: WgpuSettingsPriority,
     /// The features to ensure are enabled regardless of what the adapter/backend supports.
@@ -66,7 +66,24 @@ impl Default for WgpuSettings {
             Backends::all()
         };
 
-        let backends = Some(wgpu::util::backend_bits_from_env().unwrap_or(default_backends));
+        let backends_flags = wgpu::util::backend_bits_from_env().unwrap_or(default_backends);
+
+        let mut backends = Vec::new();
+        if backends_flags.contains(Backends::VULKAN) {
+            backends.push(Backend::Vulkan);
+        }
+        if backends_flags.contains(Backends::METAL) {
+            backends.push(Backend::Metal);
+        }
+        if backends_flags.contains(Backends::DX12) {
+            backends.push(Backend::Dx12);
+        }
+        if backends_flags.contains(Backends::GL) {
+            backends.push(Backend::Gl);
+        }
+        if backends_flags.contains(Backends::BROWSER_WEBGPU) {
+            backends.push(Backend::BrowserWebGpu);
+        }
 
         let power_preference =
             wgpu::util::power_preference_from_env().unwrap_or(PowerPreference::HighPerformance);
@@ -103,7 +120,7 @@ impl Default for WgpuSettings {
 
         Self {
             device_label: Default::default(),
-            backends,
+            backends: Some(backends),
             power_preference,
             priority,
             features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,

@@ -19,7 +19,8 @@ use bevy_time::TimeSender;
 use bevy_utils::Instant;
 use std::sync::Arc;
 use wgpu::{
-    Adapter, AdapterInfo, CommandBuffer, CommandEncoder, Instance, Queue, RequestAdapterOptions,
+    Adapter, AdapterInfo, Backend, CommandBuffer, CommandEncoder, Instance, Queue,
+    RequestAdapterOptions,
 };
 
 /// Updates the [`RenderGraph`] with all of its nodes and then runs it to render the entire frame.
@@ -128,6 +129,26 @@ const GPU_NOT_FOUND_ERROR_MESSAGE: &str = if cfg!(target_os = "linux") {
 } else {
     "Unable to find a GPU! Make sure you have installed required drivers!"
 };
+
+/// Attempts to create a [`wgpu::Instance`] with the first requested backend that is available.
+pub fn create_instance(requested_backends: &[Backend], settings: &WgpuSettings) -> Option<Instance> {
+    for backend in requested_backends {
+        let backends = (*backend).into();
+
+        let instance = Instance::new(wgpu::InstanceDescriptor {
+            backends,
+            dx12_shader_compiler: settings.dx12_shader_compiler.clone(),
+            flags: settings.instance_flags,
+            gles_minor_version: settings.gles3_minor_version,
+        });
+
+        if !instance.enumerate_adapters(backends).is_empty() {
+            return Some(instance);
+        }
+    }
+
+    None
+}
 
 /// Initializes the renderer by retrieving and preparing the GPU instance, device and queue
 /// for the specified backend.
