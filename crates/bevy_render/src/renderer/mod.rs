@@ -19,8 +19,8 @@ use bevy_time::TimeSender;
 use bevy_utils::Instant;
 use std::sync::Arc;
 use wgpu::{
-    Adapter, AdapterInfo, Backend, CommandBuffer, CommandEncoder, Instance, Queue,
-    RequestAdapterOptions,
+    Adapter, AdapterInfo, Backend, CommandBuffer, CommandEncoder, DeviceType, Instance,
+    PowerPreference, Queue, RequestAdapterOptions,
 };
 
 /// Updates the [`RenderGraph`] with all of its nodes and then runs it to render the entire frame.
@@ -131,19 +131,53 @@ const GPU_NOT_FOUND_ERROR_MESSAGE: &str = if cfg!(target_os = "linux") {
 };
 
 /// Attempts to create a [`wgpu::Instance`] with the first requested backend that is available.
-pub fn create_instance(requested_backends: &[Backend], settings: &WgpuSettings) -> Option<Instance> {
-    for backend in requested_backends {
-        let backends = (*backend).into();
+pub fn create_instance(
+    requested_backends: &[Backend],
+    settings: &WgpuSettings,
+) -> Option<Instance> {
+    // We use the same order of device types as `wgpu` does in "wgpu-core-0.19.0\src\instance.rs:898"
+    let target_device_types = match settings.power_preference {
+        PowerPreference::None => [
+            DeviceType::DiscreteGpu,
+            DeviceType::IntegratedGpu,
+            DeviceType::Other,
+            DeviceType::VirtualGpu,
+            DeviceType::Cpu,
+        ],
+        PowerPreference::LowPower => [
+            DeviceType::IntegratedGpu,
+            DeviceType::DiscreteGpu,
+            DeviceType::Other,
+            DeviceType::VirtualGpu,
+            DeviceType::Cpu,
+        ],
+        PowerPreference::HighPerformance => [
+            DeviceType::DiscreteGpu,
+            DeviceType::IntegratedGpu,
+            DeviceType::Other,
+            DeviceType::VirtualGpu,
+            DeviceType::Cpu,
+        ],
+    };
 
-        let instance = Instance::new(wgpu::InstanceDescriptor {
-            backends,
-            dx12_shader_compiler: settings.dx12_shader_compiler.clone(),
-            flags: settings.instance_flags,
-            gles_minor_version: settings.gles3_minor_version,
-        });
+    for target_device_type in target_device_types {
+        for backend in requested_backends {
+            let backends = (*backend).into();
 
-        if !instance.enumerate_adapters(backends).is_empty() {
-            return Some(instance);
+            let instance = Instance::new(wgpu::InstanceDescriptor {
+                backends,
+                dx12_shader_compiler: settings.dx12_shader_compiler.clone(),
+                flags: settings.instance_flags,
+                gles_minor_version: settings.gles3_minor_version,
+            });
+
+            if instance
+                .enumerate_adapters(backends)
+                .iter()
+                .any(|adapter| adapter.get_info().device_type == target_device_type)
+            {
+                return Some(instance);
+            }
         }
     }
 
