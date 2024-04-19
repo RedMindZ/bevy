@@ -20,7 +20,7 @@ use bevy_utils::Instant;
 use std::sync::Arc;
 use wgpu::{
     Adapter, AdapterInfo, Backend, CommandBuffer, CommandEncoder, DeviceType, Instance,
-    PowerPreference, Queue, RequestAdapterOptions,
+    PowerPreference, Queue,
 };
 
 /// Updates the [`RenderGraph`] with all of its nodes and then runs it to render the entire frame.
@@ -124,17 +124,14 @@ pub struct RenderInstance(pub Arc<Instance>);
 #[derive(Resource, Clone, Deref, DerefMut)]
 pub struct RenderAdapterInfo(pub AdapterInfo);
 
-const GPU_NOT_FOUND_ERROR_MESSAGE: &str = if cfg!(target_os = "linux") {
-    "Unable to find a GPU! Make sure you have installed required drivers! For extra information, see: https://github.com/bevyengine/bevy/blob/latest/docs/linux_dependencies.md"
-} else {
-    "Unable to find a GPU! Make sure you have installed required drivers!"
-};
-
-/// Attempts to create a [`wgpu::Instance`] with the first requested backend that is available.
-pub fn create_instance(
+/// Attempts to create a [`wgpu::Instance`] and [`wgpu::Adapter`] with the
+/// first requested backend that has an adapter with the requested power preference.
+/// 
+/// Prioritizes power preference over backend.
+pub fn create_instance_and_adapter(
     requested_backends: &[Backend],
     settings: &WgpuSettings,
-) -> Option<Instance> {
+) -> Option<(Instance, Adapter)> {
     // We use the same order of device types as `wgpu` does in "wgpu-core-0.19.0\src\instance.rs:898"
     let target_device_types = match settings.power_preference {
         PowerPreference::None => [
@@ -171,12 +168,13 @@ pub fn create_instance(
                 gles_minor_version: settings.gles3_minor_version,
             });
 
-            if instance
+            if let Some(adapter) = instance
                 .enumerate_adapters(backends)
-                .iter()
-                .any(|adapter| adapter.get_info().device_type == target_device_type)
+                .drain(..)
+                .filter(|adapter| adapter.get_info().device_type == target_device_type)
+                .next()
             {
-                return Some(instance);
+                return Some((instance, adapter));
             }
         }
     }
@@ -187,15 +185,9 @@ pub fn create_instance(
 /// Initializes the renderer by retrieving and preparing the GPU instance, device and queue
 /// for the specified backend.
 pub async fn initialize_renderer(
-    instance: &Instance,
+    adapter: Adapter,
     options: &WgpuSettings,
-    request_adapter_options: &RequestAdapterOptions<'_, '_>,
 ) -> (RenderDevice, RenderQueue, RenderAdapterInfo, RenderAdapter) {
-    let adapter = instance
-        .request_adapter(request_adapter_options)
-        .await
-        .expect(GPU_NOT_FOUND_ERROR_MESSAGE);
-
     let adapter_info = adapter.get_info();
     info!("{:?}", adapter_info);
 

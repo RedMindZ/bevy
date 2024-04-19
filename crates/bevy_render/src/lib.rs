@@ -51,7 +51,6 @@ use bevy_utils::prelude::default;
 pub use extract_param::Extract;
 
 use bevy_hierarchy::ValidParentCheckPlugin;
-use bevy_window::{PrimaryWindow, RawHandleWrapper};
 use globals::GlobalsPlugin;
 use renderer::{RenderAdapter, RenderAdapterInfo, RenderDevice, RenderQueue};
 
@@ -67,7 +66,7 @@ use crate::{
 };
 use bevy_app::{App, AppLabel, Plugin, SubApp};
 use bevy_asset::{load_internal_asset, AssetApp, AssetServer, Handle};
-use bevy_ecs::{prelude::*, schedule::ScheduleLabel, system::SystemState};
+use bevy_ecs::{prelude::*, schedule::ScheduleLabel};
 use bevy_utils::tracing::debug;
 use std::{
     ops::{Deref, DerefMut},
@@ -255,37 +254,17 @@ impl Plugin for RenderPlugin {
                         future_renderer_resources_wrapper.clone(),
                     ));
 
-                    let mut system_state: SystemState<
-                        Query<&RawHandleWrapper, With<PrimaryWindow>>,
-                    > = SystemState::new(&mut app.world);
-                    let primary_window = system_state.get(&app.world).get_single().ok().cloned();
-
                     let settings = render_creation.clone();
                     let async_renderer = async move {
-                        let instance = renderer::create_instance(backends, &settings)
-                            .expect("None of the requested graphics backends are available");
-
-                        // SAFETY: Plugins should be set up on the main thread.
-                        let surface = primary_window.map(|wrapper| unsafe {
-                            let handle = wrapper.get_handle();
-                            instance
-                                .create_surface(handle)
-                                .expect("Failed to create wgpu surface")
-                        });
-
-                        let request_adapter_options = wgpu::RequestAdapterOptions {
-                            power_preference: settings.power_preference,
-                            compatible_surface: surface.as_ref(),
-                            ..Default::default()
-                        };
+                        let (instance, adapter) = renderer::create_instance_and_adapter(
+                            backends, &settings,
+                        )
+                        .expect(
+                            "Unable to find a GPU! Make sure you have installed required drivers!",
+                        );
 
                         let (device, queue, adapter_info, render_adapter) =
-                            renderer::initialize_renderer(
-                                &instance,
-                                &settings,
-                                &request_adapter_options,
-                            )
-                            .await;
+                            renderer::initialize_renderer(adapter, &settings).await;
                         debug!("Configured wgpu adapter Limits: {:#?}", device.limits());
                         debug!("Configured wgpu adapter Features: {:#?}", device.features());
                         let mut future_renderer_resources_inner =
