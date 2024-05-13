@@ -49,7 +49,7 @@ pub use wgpu::{
     SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderModuleDescriptor, ShaderSource,
     ShaderStages, StencilFaceState, StencilOperation, StencilState, StorageTextureAccess, StoreOp,
     TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
-    TextureUsages, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
+    TextureUsages, TextureView as WgpuTextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
     VertexBufferLayout as RawVertexBufferLayout, VertexFormat, VertexState as RawVertexState,
     VertexStepMode, COPY_BYTES_PER_ROW_ALIGNMENT,
 };
