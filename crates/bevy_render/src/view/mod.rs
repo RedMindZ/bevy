@@ -539,7 +539,8 @@ pub fn prepare_view_targets(
                                     sample_count: msaa.samples(),
                                     dimension: TextureDimension::D2,
                                     format: main_texture_format,
-                                    usage: TextureUsages::RENDER_ATTACHMENT,
+                                    usage: TextureUsages::RENDER_ATTACHMENT
+                                        | TextureUsages::COPY_SRC,
                                     view_formats: descriptor.view_formats,
                                 },
                             );
