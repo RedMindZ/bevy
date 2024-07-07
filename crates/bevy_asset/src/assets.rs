@@ -24,8 +24,8 @@ use thiserror::Error;
     Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Reflect, Serialize, Deserialize,
 )]
 pub struct AssetIndex {
-    pub generation: u32,
-    pub index: u32,
+    pub(crate) generation: u32,
+    pub(crate) index: u32,
 }
 
 /// Allocates generational [`AssetIndex`] values and facilitates their reuse.

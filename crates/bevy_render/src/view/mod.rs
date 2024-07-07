@@ -535,13 +535,8 @@ pub fn prepare_view_targets(
                                 TextureDescriptor {
                                     label: Some("main_texture_sampled"),
                                     size,
-                                    mip_level_count: 1,
                                     sample_count: msaa.samples(),
-                                    dimension: TextureDimension::D2,
-                                    format: main_texture_format,
-                                    usage: TextureUsages::RENDER_ATTACHMENT
-                                        | TextureUsages::COPY_SRC,
-                                    view_formats: descriptor.view_formats,
+                                    ..descriptor
                                 },
                             );
                             Some(sampled)
