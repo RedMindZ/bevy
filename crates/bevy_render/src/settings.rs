@@ -134,6 +134,42 @@ impl Default for WgpuSettings {
     }
 }
 
+impl WgpuSettings {
+    pub fn with_backends_and_power_preference(
+        backends: &[Backend],
+        power_preference: PowerPreference,
+    ) -> Self {
+        let backends = wgpu::util::backend_bits_from_env().map_or(backends.into(), |flags| {
+            let mut backends = Vec::new();
+            if flags.contains(Backends::VULKAN) {
+                backends.push(Backend::Vulkan);
+            }
+            if flags.contains(Backends::METAL) {
+                backends.push(Backend::Metal);
+            }
+            if flags.contains(Backends::DX12) {
+                backends.push(Backend::Dx12);
+            }
+            if flags.contains(Backends::GL) {
+                backends.push(Backend::Gl);
+            }
+            if flags.contains(Backends::BROWSER_WEBGPU) {
+                backends.push(Backend::BrowserWebGpu);
+            }
+
+            backends
+        });
+
+        let power_preference = wgpu::util::power_preference_from_env().unwrap_or(power_preference);
+
+        Self {
+            backends: Some(backends),
+            power_preference,
+            ..Default::default()
+        }
+    }
+}
+
 /// An enum describing how the renderer will initialize resources. This is used when creating the [`RenderPlugin`](crate::RenderPlugin).
 pub enum RenderCreation {
     /// Allows renderer resource initialization to happen outside of the rendering plugin.
