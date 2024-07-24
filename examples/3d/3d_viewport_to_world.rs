@@ -1,6 +1,5 @@
 //! This example demonstrates how to use the `Camera::viewport_to_world` method.
 
-use bevy::math::primitives::Direction3d;
 use bevy::prelude::*;
 
 fn main() {
@@ -30,19 +29,15 @@ fn draw_cursor(
     };
 
     // Calculate if and where the ray is hitting the ground plane.
-    let Some(distance) = ray.intersect_plane(ground.translation(), Plane3d::new(ground.up()))
+    let Some(distance) =
+        ray.intersect_plane(ground.translation(), InfinitePlane3d::new(ground.up()))
     else {
         return;
     };
     let point = ray.get_point(distance);
 
     // Draw a circle just above the ground plane at that position.
-    gizmos.circle(
-        point + ground.up() * 0.01,
-        Direction3d::new_unchecked(ground.up()), // Up vector is already normalized.
-        0.2,
-        Color::WHITE,
-    );
+    gizmos.circle(point + ground.up() * 0.01, ground.up(), 0.2, Color::WHITE);
 }
 
 #[derive(Component)]
@@ -57,7 +52,7 @@ fn setup(
     commands.spawn((
         PbrBundle {
             mesh: meshes.add(Plane3d::default().mesh().size(20., 20.)),
-            material: materials.add(Color::rgb(0.3, 0.5, 0.3)),
+            material: materials.add(Color::srgb(0.3, 0.5, 0.3)),
             ..default()
         },
         Ground,

@@ -5,7 +5,7 @@ use bevy::{
     prelude::*,
     reflect::TypePath,
     render::{
-        mesh::{MeshVertexAttribute, MeshVertexBufferLayout},
+        mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef},
         render_resource::*,
     },
     sprite::{Material2d, Material2dKey, Material2dPlugin, MaterialMesh2dBundle, Mesh2dHandle},
@@ -42,7 +42,13 @@ fn setup(
     mut materials: ResMut<Assets<CustomMaterial>>,
 ) {
     // Add a mesh loaded from a glTF file. This mesh has data for `ATTRIBUTE_BARYCENTRIC`.
-    let mesh = asset_server.load("models/barycentric/barycentric.gltf#Mesh0/Primitive0");
+    let mesh = asset_server.load(
+        GltfAssetLabel::Primitive {
+            mesh: 0,
+            primitive: 0,
+        }
+        .from_asset("models/barycentric/barycentric.gltf"),
+    );
     commands.spawn(MaterialMesh2dBundle {
         mesh: Mesh2dHandle(mesh),
         material: materials.add(CustomMaterial {}),
@@ -70,10 +76,10 @@ impl Material2d for CustomMaterial {
 
     fn specialize(
         descriptor: &mut RenderPipelineDescriptor,
-        layout: &MeshVertexBufferLayout,
+        layout: &MeshVertexBufferLayoutRef,
         _key: Material2dKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        let vertex_layout = layout.get_layout(&[
+        let vertex_layout = layout.0.get_layout(&[
             Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
             Mesh::ATTRIBUTE_COLOR.at_shader_location(1),
             ATTRIBUTE_BARYCENTRIC.at_shader_location(2),

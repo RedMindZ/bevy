@@ -4,12 +4,11 @@ use crate::{
     core_3d::graph::{Core3d, Node3d},
 };
 use bevy_app::{App, Plugin};
+use bevy_color::LinearRgba;
 use bevy_ecs::prelude::*;
 use bevy_render::{
     camera::ExtractedCamera,
-    color::Color,
     render_graph::{Node, NodeRunError, RenderGraphApp, RenderGraphContext},
-    render_resource::BindGroupEntries,
     renderer::RenderContext,
     view::{Msaa, ViewTarget},
     Render, RenderSet,
@@ -22,10 +21,9 @@ pub struct MsaaWritebackPlugin;
 
 impl Plugin for MsaaWritebackPlugin {
     fn build(&self, app: &mut App) {
-        let Ok(render_app) = app.get_sub_app_mut(RenderApp) else {
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
-
         render_app.add_systems(
             Render,
             prepare_msaa_writeback_pipelines.in_set(RenderSet::Prepare),
@@ -33,7 +31,7 @@ impl Plugin for MsaaWritebackPlugin {
         {
             render_app
                 .add_render_graph_node::<MsaaWritebackNode>(Core2d, Node2d::MsaaWriteback)
-                .add_render_graph_edge(Core2d, Node2d::MsaaWriteback, Node2d::MainPass);
+                .add_render_graph_edge(Core2d, Node2d::MsaaWriteback, Node2d::StartMainPass);
         }
         {
             render_app
@@ -93,7 +91,7 @@ impl Node for MsaaWritebackNode {
                     view: target.sampled_main_texture_view().unwrap(),
                     resolve_target: Some(post_process.destination),
                     ops: Operations {
-                        load: LoadOp::Clear(Color::BLACK.into()),
+                        load: LoadOp::Clear(LinearRgba::BLACK.into()),
                         store: StoreOp::Store,
                     },
                 })],

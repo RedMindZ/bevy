@@ -3,11 +3,12 @@ mod render_device;
 
 use bevy_derive::{Deref, DerefMut};
 use bevy_tasks::ComputeTaskPool;
-use bevy_utils::tracing::{error, info, info_span};
+use bevy_utils::tracing::{error, info, info_span, warn};
 pub use graph_runner::*;
 pub use render_device::*;
 
 use crate::{
+    diagnostic::{internal::DiagnosticsRecorder, RecordDiagnostics},
     render_graph::RenderGraph,
     render_phase::TrackedRenderPass,
     render_resource::RenderPassDescriptor,
@@ -21,6 +22,7 @@ use std::sync::Arc;
 use wgpu::{
     Adapter, AdapterInfo, Backend, CommandBuffer, CommandEncoder, DeviceType, Instance,
     PowerPreference, Queue,
+   
 };
 
 /// Updates the [`RenderGraph`] with all of its nodes and then runs it to render the entire frame.
@@ -28,14 +30,18 @@ pub fn render_system(world: &mut World, state: &mut SystemState<Query<Entity, Wi
     world.resource_scope(|world, mut graph: Mut<RenderGraph>| {
         graph.update(world);
     });
+
+    let diagnostics_recorder = world.remove_resource::<DiagnosticsRecorder>();
+
     let graph = world.resource::<RenderGraph>();
     let render_device = world.resource::<RenderDevice>();
     let render_queue = world.resource::<RenderQueue>();
     let render_adapter = world.resource::<RenderAdapter>();
 
-    if let Err(e) = RenderGraphRunner::run(
+    let res = RenderGraphRunner::run(
         graph,
         render_device.clone(), // TODO: is this clone really necessary?
+        diagnostics_recorder,
         &render_queue.0,
         &render_adapter.0,
         world,
@@ -43,20 +49,28 @@ pub fn render_system(world: &mut World, state: &mut SystemState<Query<Entity, Wi
         |encoder| {
             crate::view::screenshot::submit_screenshot_commands(world, encoder);
         },
-    ) {
-        error!("Error running render graph:");
-        {
-            let mut src: &dyn std::error::Error = &e;
-            loop {
-                error!("> {}", src);
-                match src.source() {
-                    Some(s) => src = s,
-                    None => break,
+    );
+
+    match res {
+        Ok(Some(diagnostics_recorder)) => {
+            world.insert_resource(diagnostics_recorder);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            error!("Error running render graph:");
+            {
+                let mut src: &dyn std::error::Error = &e;
+                loop {
+                    error!("> {}", src);
+                    match src.source() {
+                        Some(s) => src = s,
+                        None => break,
+                    }
                 }
             }
-        }
 
-        panic!("Error running render graph: {e}");
+            panic!("Error running render graph: {e}");
+        }
     }
 
     {
@@ -106,23 +120,60 @@ pub fn render_system(world: &mut World, state: &mut SystemState<Query<Entity, Wi
     }
 }
 
+/// A wrapper to safely make `wgpu` types Send / Sync on web with atomics enabled.
+/// On web with `atomics` enabled the inner value can only be accessed
+/// or dropped on the `wgpu` thread or else a panic will occur.
+/// On other platforms the wrapper simply contains the wrapped value.
+#[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
+#[derive(Debug, Clone, Deref, DerefMut)]
+pub struct WgpuWrapper<T>(T);
+#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+#[derive(Debug, Clone, Deref, DerefMut)]
+pub struct WgpuWrapper<T>(send_wrapper::SendWrapper<T>);
+
+// SAFETY: SendWrapper is always Send + Sync.
+#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+unsafe impl<T> Send for WgpuWrapper<T> {}
+#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+unsafe impl<T> Sync for WgpuWrapper<T> {}
+
+#[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
+impl<T> WgpuWrapper<T> {
+    pub fn new(t: T) -> Self {
+        Self(t)
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+impl<T> WgpuWrapper<T> {
+    pub fn new(t: T) -> Self {
+        Self(send_wrapper::SendWrapper::new(t))
+    }
+}
+
 /// This queue is used to enqueue tasks for the GPU to execute asynchronously.
 #[derive(Resource, Clone, Deref, DerefMut)]
-pub struct RenderQueue(pub Arc<Queue>);
+pub struct RenderQueue(pub Arc<WgpuWrapper<Queue>>);
 
 /// The handle to the physical device being used for rendering.
 /// See [`Adapter`] for more info.
 #[derive(Resource, Clone, Debug, Deref, DerefMut)]
-pub struct RenderAdapter(pub Arc<Adapter>);
+pub struct RenderAdapter(pub Arc<WgpuWrapper<Adapter>>);
 
 /// The GPU instance is used to initialize the [`RenderQueue`] and [`RenderDevice`],
 /// as well as to create [`WindowSurfaces`](crate::view::window::WindowSurfaces).
 #[derive(Resource, Clone, Deref, DerefMut)]
-pub struct RenderInstance(pub Arc<Instance>);
+pub struct RenderInstance(pub Arc<WgpuWrapper<Instance>>);
 
 /// The [`AdapterInfo`] of the adapter in use by the renderer.
 #[derive(Resource, Clone, Deref, DerefMut)]
-pub struct RenderAdapterInfo(pub AdapterInfo);
+pub struct RenderAdapterInfo(pub WgpuWrapper<AdapterInfo>);
+
+const GPU_NOT_FOUND_ERROR_MESSAGE: &str = if cfg!(target_os = "linux") {
+    "Unable to find a GPU! Make sure you have installed required drivers! For extra information, see: https://github.com/bevyengine/bevy/blob/latest/docs/linux_dependencies.md"
+} else {
+    "Unable to find a GPU! Make sure you have installed required drivers!"
+};
 
 /// Attempts to create a [`wgpu::Instance`] and [`wgpu::Adapter`] with the
 /// first requested backend that has an adapter with the requested power preference.
@@ -191,6 +242,13 @@ pub async fn initialize_renderer(
     let adapter_info = adapter.get_info();
     info!("{:?}", adapter_info);
 
+    if adapter_info.device_type == DeviceType::Cpu {
+        warn!(
+            "The selected adapter is using a driver that only supports software rendering. \
+             This is likely to be very slow. See https://bevyengine.org/learn/errors/b0006/"
+        );
+    }
+
     #[cfg(feature = "wgpu_trace")]
     let trace_path = {
         let path = std::path::Path::new("wgpu_trace");
@@ -213,6 +271,15 @@ pub async fn initialize_renderer(
             // integrated GPUs.
             features -= wgpu::Features::MAPPABLE_PRIMARY_BUFFERS;
         }
+
+        // RAY_QUERY and RAY_TRACING_ACCELERATION STRUCTURE will sometimes cause DeviceLost failures on platforms
+        // that report them as supported:
+        // <https://github.com/gfx-rs/wgpu/issues/5488>
+        // WGPU also currently doesn't actually support these features yet, so we should disable
+        // them until they are safe to enable.
+        features -= wgpu::Features::RAY_QUERY;
+        features -= wgpu::Features::RAY_TRACING_ACCELERATION_STRUCTURE;
+
         limits = adapter.limits();
     }
 
@@ -321,6 +388,18 @@ pub async fn initialize_renderer(
             max_non_sampler_bindings: limits
                 .max_non_sampler_bindings
                 .min(constrained_limits.max_non_sampler_bindings),
+            max_color_attachments: limits
+                .max_color_attachments
+                .min(constrained_limits.max_color_attachments),
+            max_color_attachment_bytes_per_sample: limits
+                .max_color_attachment_bytes_per_sample
+                .min(constrained_limits.max_color_attachment_bytes_per_sample),
+            min_subgroup_size: limits
+                .min_subgroup_size
+                .max(constrained_limits.min_subgroup_size),
+            max_subgroup_size: limits
+                .max_subgroup_size
+                .min(constrained_limits.max_subgroup_size),
         };
     }
 
@@ -335,12 +414,12 @@ pub async fn initialize_renderer(
         )
         .await
         .unwrap();
-    let queue = Arc::new(queue);
-    let adapter = Arc::new(adapter);
+    let queue = Arc::new(WgpuWrapper::new(queue));
+    let adapter = Arc::new(WgpuWrapper::new(adapter));
     (
         RenderDevice::from(device),
         RenderQueue(queue),
-        RenderAdapterInfo(adapter_info),
+        RenderAdapterInfo(WgpuWrapper::new(adapter_info)),
         RenderAdapter(adapter),
     )
 }
@@ -354,11 +433,16 @@ pub struct RenderContext<'w> {
     command_encoder: Option<CommandEncoder>,
     command_buffer_queue: Vec<QueuedCommandBuffer<'w>>,
     force_serial: bool,
+    diagnostics_recorder: Option<Arc<DiagnosticsRecorder>>,
 }
 
 impl<'w> RenderContext<'w> {
     /// Creates a new [`RenderContext`] from a [`RenderDevice`].
-    pub fn new(render_device: RenderDevice, adapter_info: AdapterInfo) -> Self {
+    pub fn new(
+        render_device: RenderDevice,
+        adapter_info: AdapterInfo,
+        diagnostics_recorder: Option<DiagnosticsRecorder>,
+    ) -> Self {
         // HACK: Parallel command encoding is currently bugged on AMD + Windows + Vulkan with wgpu 0.19.1
         #[cfg(target_os = "windows")]
         let force_serial =
@@ -374,12 +458,19 @@ impl<'w> RenderContext<'w> {
             command_encoder: None,
             command_buffer_queue: Vec::new(),
             force_serial,
+            diagnostics_recorder: diagnostics_recorder.map(Arc::new),
         }
     }
 
     /// Gets the underlying [`RenderDevice`].
     pub fn render_device(&self) -> &RenderDevice {
         &self.render_device
+    }
+
+    /// Gets the diagnostics recorder, used to track elapsed time and pipeline statistics
+    /// of various render and compute passes.
+    pub fn diagnostic_recorder(&self) -> impl RecordDiagnostics {
+        self.diagnostics_recorder.clone()
     }
 
     /// Gets the current [`CommandEncoder`].
@@ -401,6 +492,7 @@ impl<'w> RenderContext<'w> {
             self.render_device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor::default())
         });
+
         let render_pass = command_encoder.begin_render_pass(&descriptor);
         TrackedRenderPass::new(&self.render_device, render_pass)
     }
@@ -425,7 +517,10 @@ impl<'w> RenderContext<'w> {
     /// buffer.
     pub fn add_command_buffer_generation_task(
         &mut self,
+        #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
         task: impl FnOnce(RenderDevice) -> CommandBuffer + 'w + Send,
+        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        task: impl FnOnce(RenderDevice) -> CommandBuffer + 'w,
     ) {
         self.flush_encoder();
 
@@ -437,33 +532,80 @@ impl<'w> RenderContext<'w> {
     ///
     /// This function will wait until all command buffer generation tasks are complete
     /// by running them in parallel (where supported).
-    pub fn finish(mut self) -> Vec<CommandBuffer> {
+    ///
+    /// The [`CommandBuffer`]s will be returned in the order that they were added.
+    pub fn finish(
+        mut self,
+    ) -> (
+        Vec<CommandBuffer>,
+        RenderDevice,
+        Option<DiagnosticsRecorder>,
+    ) {
         self.flush_encoder();
 
         let mut command_buffers = Vec::with_capacity(self.command_buffer_queue.len());
-        let mut task_based_command_buffers = ComputeTaskPool::get().scope(|task_pool| {
-            for (i, queued_command_buffer) in self.command_buffer_queue.into_iter().enumerate() {
-                match queued_command_buffer {
-                    QueuedCommandBuffer::Ready(command_buffer) => {
-                        command_buffers.push((i, command_buffer));
-                    }
-                    QueuedCommandBuffer::Task(command_buffer_generation_task) => {
-                        let render_device = self.render_device.clone();
-                        if self.force_serial {
-                            command_buffers
-                                .push((i, command_buffer_generation_task(render_device)));
-                        } else {
-                            task_pool.spawn(async move {
-                                (i, command_buffer_generation_task(render_device))
-                            });
+
+        #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
+        {
+            let mut task_based_command_buffers = ComputeTaskPool::get().scope(|task_pool| {
+                for (i, queued_command_buffer) in self.command_buffer_queue.into_iter().enumerate()
+                {
+                    match queued_command_buffer {
+                        QueuedCommandBuffer::Ready(command_buffer) => {
+                            command_buffers.push((i, command_buffer));
+                        }
+                        QueuedCommandBuffer::Task(command_buffer_generation_task) => {
+                            let render_device = self.render_device.clone();
+                            if self.force_serial {
+                                command_buffers
+                                    .push((i, command_buffer_generation_task(render_device)));
+                            } else {
+                                task_pool.spawn(async move {
+                                    (i, command_buffer_generation_task(render_device))
+                                });
+                            }
                         }
                     }
                 }
+            });
+            command_buffers.append(&mut task_based_command_buffers);
+        }
+
+        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        for (i, queued_command_buffer) in self.command_buffer_queue.into_iter().enumerate() {
+            match queued_command_buffer {
+                QueuedCommandBuffer::Ready(command_buffer) => {
+                    command_buffers.push((i, command_buffer));
+                }
+                QueuedCommandBuffer::Task(command_buffer_generation_task) => {
+                    let render_device = self.render_device.clone();
+                    command_buffers.push((i, command_buffer_generation_task(render_device)));
+                }
             }
-        });
-        command_buffers.append(&mut task_based_command_buffers);
+        }
+
         command_buffers.sort_unstable_by_key(|(i, _)| *i);
-        command_buffers.into_iter().map(|(_, cb)| cb).collect()
+
+        let mut command_buffers = command_buffers
+            .into_iter()
+            .map(|(_, cb)| cb)
+            .collect::<Vec<CommandBuffer>>();
+
+        let mut diagnostics_recorder = self.diagnostics_recorder.take().map(|v| {
+            Arc::try_unwrap(v)
+                .ok()
+                .expect("diagnostic recorder shouldn't be held longer than necessary")
+        });
+
+        if let Some(recorder) = &mut diagnostics_recorder {
+            let mut command_encoder = self
+                .render_device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+            recorder.resolve(&mut command_encoder);
+            command_buffers.push(command_encoder.finish());
+        }
+
+        (command_buffers, self.render_device, diagnostics_recorder)
     }
 
     fn flush_encoder(&mut self) {
@@ -476,5 +618,8 @@ impl<'w> RenderContext<'w> {
 
 enum QueuedCommandBuffer<'w> {
     Ready(CommandBuffer),
+    #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
     Task(Box<dyn FnOnce(RenderDevice) -> CommandBuffer + 'w + Send>),
+    #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+    Task(Box<dyn FnOnce(RenderDevice) -> CommandBuffer + 'w>),
 }

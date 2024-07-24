@@ -116,7 +116,7 @@ impl Plugin for CASPlugin {
             UniformComponentPlugin::<CASUniform>::default(),
         ));
 
-        let Ok(render_app) = app.get_sub_app_mut(RenderApp) else {
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
         render_app
@@ -142,17 +142,17 @@ impl Plugin for CASPlugin {
         }
         {
             render_app
-                .add_render_graph_node::<CASNode>(Core2d, Node2d::ConstrastAdaptiveSharpening)
+                .add_render_graph_node::<CASNode>(Core2d, Node2d::ContrastAdaptiveSharpening)
                 .add_render_graph_edge(
                     Core2d,
                     Node2d::Tonemapping,
-                    Node2d::ConstrastAdaptiveSharpening,
+                    Node2d::ContrastAdaptiveSharpening,
                 )
                 .add_render_graph_edges(
                     Core2d,
                     (
                         Node2d::Fxaa,
-                        Node2d::ConstrastAdaptiveSharpening,
+                        Node2d::ContrastAdaptiveSharpening,
                         Node2d::EndMainPassPostProcessing,
                     ),
                 );
@@ -160,7 +160,7 @@ impl Plugin for CASPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        let Ok(render_app) = app.get_sub_app_mut(RenderApp) else {
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
         render_app.init_resource::<CASPipeline>();

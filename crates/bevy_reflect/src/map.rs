@@ -1,13 +1,12 @@
 use std::any::{Any, TypeId};
 use std::fmt::{Debug, Formatter};
-use std::hash::Hash;
 
 use bevy_reflect_derive::impl_type_path;
 use bevy_utils::{Entry, HashMap};
 
 use crate::{
-    self as bevy_reflect, Reflect, ReflectKind, ReflectMut, ReflectOwned, ReflectRef, TypeInfo,
-    TypePath, TypePathTable,
+    self as bevy_reflect, ApplyError, Reflect, ReflectKind, ReflectMut, ReflectOwned, ReflectRef,
+    TypeInfo, TypePath, TypePathTable,
 };
 
 /// A trait used to power [map-like] operations via [reflection].
@@ -107,11 +106,8 @@ pub struct MapInfo {
 
 impl MapInfo {
     /// Create a new [`MapInfo`].
-    pub fn new<
-        TMap: Map + TypePath,
-        TKey: Hash + Reflect + TypePath,
-        TValue: Reflect + TypePath,
-    >() -> Self {
+    pub fn new<TMap: Map + TypePath, TKey: Reflect + TypePath, TValue: Reflect + TypePath>() -> Self
+    {
         Self {
             type_path: TypePathTable::of::<TMap>(),
             type_id: TypeId::of::<TMap>(),
@@ -198,7 +194,16 @@ impl MapInfo {
     }
 }
 
-const HASH_ERROR: &str = "the given key does not support hashing";
+#[macro_export]
+macro_rules! hash_error {
+    ( $key:expr ) => {{
+        let type_name = match (*$key).get_represented_type_info() {
+            None => "Unknown",
+            Some(s) => s.type_path(),
+        };
+        format!("the given key {} does not support hashing", type_name).as_str()
+    }};
+}
 
 /// An ordered mapping between reflected values.
 #[derive(Default)]
@@ -237,13 +242,13 @@ impl DynamicMap {
 impl Map for DynamicMap {
     fn get(&self, key: &dyn Reflect) -> Option<&dyn Reflect> {
         self.indices
-            .get(&key.reflect_hash().expect(HASH_ERROR))
+            .get(&key.reflect_hash().expect(hash_error!(key)))
             .map(|index| &*self.values.get(*index).unwrap().1)
     }
 
     fn get_mut(&mut self, key: &dyn Reflect) -> Option<&mut dyn Reflect> {
         self.indices
-            .get(&key.reflect_hash().expect(HASH_ERROR))
+            .get(&key.reflect_hash().expect(hash_error!(key)))
             .cloned()
             .map(move |index| &mut *self.values.get_mut(index).unwrap().1)
     }
@@ -289,7 +294,10 @@ impl Map for DynamicMap {
         key: Box<dyn Reflect>,
         mut value: Box<dyn Reflect>,
     ) -> Option<Box<dyn Reflect>> {
-        match self.indices.entry(key.reflect_hash().expect(HASH_ERROR)) {
+        match self
+            .indices
+            .entry(key.reflect_hash().expect(hash_error!(key)))
+        {
             Entry::Occupied(entry) => {
                 let (_old_key, old_value) = self.values.get_mut(*entry.get()).unwrap();
                 std::mem::swap(old_value, &mut value);
@@ -306,7 +314,7 @@ impl Map for DynamicMap {
     fn remove(&mut self, key: &dyn Reflect) -> Option<Box<dyn Reflect>> {
         let index = self
             .indices
-            .remove(&key.reflect_hash().expect(HASH_ERROR))?;
+            .remove(&key.reflect_hash().expect(hash_error!(key)))?;
         let (_key, value) = self.values.remove(index);
         Some(value)
     }
@@ -347,6 +355,10 @@ impl Reflect for DynamicMap {
 
     fn apply(&mut self, value: &dyn Reflect) {
         map_apply(self, value);
+    }
+
+    fn try_apply(&mut self, value: &dyn Reflect) -> Result<(), ApplyError> {
+        map_try_apply(self, value)
     }
 
     fn set(&mut self, value: Box<dyn Reflect>) -> Result<(), Box<dyn Reflect>> {
@@ -417,7 +429,7 @@ impl<'a> Iterator for MapIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let value = self.map.get_at(self.index);
-        self.index += 1;
+        self.index += value.is_some() as usize;
         value
     }
 
@@ -506,17 +518,37 @@ pub fn map_debug(dyn_map: &dyn Map, f: &mut Formatter<'_>) -> std::fmt::Result {
 /// This function panics if `b` is not a reflected map.
 #[inline]
 pub fn map_apply<M: Map>(a: &mut M, b: &dyn Reflect) {
+    if let Err(err) = map_try_apply(a, b) {
+        panic!("{err}");
+    }
+}
+
+/// Tries to apply the elements of reflected map `b` to the corresponding elements of map `a`
+/// and returns a Result.
+///
+/// If a key from `b` does not exist in `a`, the value is cloned and inserted.
+///
+/// # Errors
+///
+/// This function returns an [`ApplyError::MismatchedKinds`] if `b` is not a reflected map or if
+/// applying elements to each other fails.
+#[inline]
+pub fn map_try_apply<M: Map>(a: &mut M, b: &dyn Reflect) -> Result<(), ApplyError> {
     if let ReflectRef::Map(map_value) = b.reflect_ref() {
         for (key, b_value) in map_value.iter() {
             if let Some(a_value) = a.get_mut(key) {
-                a_value.apply(b_value);
+                a_value.try_apply(b_value)?;
             } else {
                 a.insert_boxed(key.clone_value(), b_value.clone_value());
             }
         }
     } else {
-        panic!("Attempted to apply a non-map type to a map type.");
+        return Err(ApplyError::MismatchedKinds {
+            from_kind: b.reflect_kind(),
+            to_kind: ReflectKind::Map,
+        });
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -586,7 +618,7 @@ mod tests {
         assert_eq!(key, &1usize);
         assert_eq!(value, &mut values[2].to_owned());
 
-        *value = values[0].to_owned();
+        value.clone_from(&values[0].to_owned());
 
         assert_eq!(
             map.get(&1usize as &dyn Reflect)
@@ -597,5 +629,28 @@ mod tests {
         );
 
         assert!(map.get_at(2).is_none());
+    }
+
+    #[test]
+    fn next_index_increment() {
+        let values = ["first", "last"];
+        let mut map = DynamicMap::default();
+        map.insert(0usize, values[0]);
+        map.insert(1usize, values[1]);
+
+        let mut iter = map.iter();
+        let size = iter.len();
+
+        for _ in 0..2 {
+            let prev_index = iter.index;
+            assert!(iter.next().is_some());
+            assert_eq!(prev_index, iter.index - 1);
+        }
+
+        // When None we should no longer increase index
+        for _ in 0..2 {
+            assert!(iter.next().is_none());
+            assert_eq!(size, iter.index);
+        }
     }
 }

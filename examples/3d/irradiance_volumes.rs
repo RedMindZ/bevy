@@ -13,6 +13,7 @@
 //!
 //! * Clicking anywhere moves the object.
 
+use bevy::color::palettes::css::*;
 use bevy::core_pipeline::Skybox;
 use bevy::math::{uvec3, vec3};
 use bevy::pbr::irradiance_volume::IrradianceVolume;
@@ -47,9 +48,9 @@ static SWITCH_TO_SPHERE_HELP_TEXT: &str = "Tab: Switch to a plain sphere mesh";
 
 static CLICK_TO_MOVE_HELP_TEXT: &str = "Left click: Move the object";
 
-static GIZMO_COLOR: Color = Color::YELLOW;
+static GIZMO_COLOR: Color = Color::Srgba(YELLOW);
 
-static VOXEL_TRANSFORM: Mat4 = Mat4::from_cols_array_2d(&[
+static VOXEL_FROM_WORLD: Mat4 = Mat4::from_cols_array_2d(&[
     [-42.317566, 0.0, 0.0, 0.0],
     [0.0, 0.0, 44.601563, 0.0],
     [0.0, 16.73776, 0.0, 0.0],
@@ -96,8 +97,11 @@ struct ExampleAssets {
     // The glTF scene containing the animated fox.
     fox: Handle<Scene>,
 
-    // The animation that the fox will play.
-    fox_animation: Handle<AnimationClip>,
+    // The graph containing the animation that the fox will play.
+    fox_animation_graph: Handle<AnimationGraph>,
+
+    // The node within the animation graph containing the animation.
+    fox_animation_node: AnimationNodeIndex,
 
     // The voxel cube mesh.
     voxel_cube: Handle<Mesh>,
@@ -128,8 +132,8 @@ struct VoxelVisualizationExtension {
 
 #[derive(ShaderType, Debug, Clone)]
 struct VoxelVisualizationIrradianceVolumeInfo {
-    transform: Mat4,
-    inverse_transform: Mat4,
+    world_from_voxel: Mat4,
+    voxel_from_world: Mat4,
     resolution: UVec3,
     intensity: f32,
 }
@@ -205,12 +209,7 @@ fn main() {
 }
 
 // Spawns all the scene objects.
-fn setup(
-    mut commands: Commands,
-    assets: Res<ExampleAssets>,
-    app_status: Res<AppStatus>,
-    asset_server: Res<AssetServer>,
-) {
+fn setup(mut commands: Commands, assets: Res<ExampleAssets>, app_status: Res<AppStatus>) {
     spawn_main_scene(&mut commands, &assets);
     spawn_camera(&mut commands, &assets);
     spawn_irradiance_volume(&mut commands, &assets);
@@ -218,7 +217,7 @@ fn setup(
     spawn_sphere(&mut commands, &assets);
     spawn_voxel_cube_parent(&mut commands);
     spawn_fox(&mut commands, &assets);
-    spawn_text(&mut commands, &app_status, &asset_server);
+    spawn_text(&mut commands, &app_status);
 }
 
 fn spawn_main_scene(commands: &mut Commands, assets: &ExampleAssets) {
@@ -243,7 +242,7 @@ fn spawn_camera(commands: &mut Commands, assets: &ExampleAssets) {
 fn spawn_irradiance_volume(commands: &mut Commands, assets: &ExampleAssets) {
     commands
         .spawn(SpatialBundle {
-            transform: Transform::from_matrix(VOXEL_TRANSFORM),
+            transform: Transform::from_matrix(VOXEL_FROM_WORLD),
             ..SpatialBundle::default()
         })
         .insert(IrradianceVolume {
@@ -297,36 +296,32 @@ fn spawn_fox(commands: &mut Commands, assets: &ExampleAssets) {
         .insert(MainObject);
 }
 
-fn spawn_text(commands: &mut Commands, app_status: &AppStatus, asset_server: &AssetServer) {
+fn spawn_text(commands: &mut Commands, app_status: &AppStatus) {
     commands.spawn(
         TextBundle {
-            text: app_status.create_text(asset_server),
-            ..TextBundle::default()
+            text: app_status.create_text(),
+            ..default()
         }
         .with_style(Style {
             position_type: PositionType::Absolute,
-            bottom: Val::Px(10.0),
-            left: Val::Px(10.0),
+            bottom: Val::Px(12.0),
+            left: Val::Px(12.0),
             ..default()
         }),
     );
 }
 
 // A system that updates the help text.
-fn update_text(
-    mut text_query: Query<&mut Text>,
-    app_status: Res<AppStatus>,
-    asset_server: Res<AssetServer>,
-) {
+fn update_text(mut text_query: Query<&mut Text>, app_status: Res<AppStatus>) {
     for mut text in text_query.iter_mut() {
-        *text = app_status.create_text(&asset_server);
+        *text = app_status.create_text();
     }
 }
 
 impl AppStatus {
     // Constructs the help text at the bottom of the screen based on the
     // application status.
-    fn create_text(&self, asset_server: &AssetServer) -> Text {
+    fn create_text(&self) -> Text {
         let irradiance_volume_help_text = if self.irradiance_volume_present {
             DISABLE_IRRADIANCE_VOLUME_HELP_TEXT
         } else {
@@ -359,11 +354,7 @@ impl AppStatus {
                 rotation_help_text,
                 switch_mesh_help_text
             ),
-            TextStyle {
-                font: asset_server.load("fonts/FiraMono-Medium.ttf"),
-                font_size: 24.0,
-                color: Color::ANTIQUE_WHITE,
-            },
+            TextStyle::default(),
         )
     }
 }
@@ -495,7 +486,7 @@ fn handle_mouse_clicks(
     let Some(ray) = camera.viewport_to_world(camera_transform, mouse_position) else {
         return;
     };
-    let Some(ray_distance) = ray.intersect_plane(Vec3::ZERO, Plane3d::new(Vec3::Y)) else {
+    let Some(ray_distance) = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y)) else {
         return;
     };
     let plane_intersection = ray.origin + ray.direction.normalize() * ray_distance;
@@ -512,45 +503,42 @@ fn handle_mouse_clicks(
 
 impl FromWorld for ExampleAssets {
     fn from_world(world: &mut World) -> Self {
-        // Load all the assets.
-        let asset_server = world.resource::<AssetServer>();
-        let fox = asset_server.load("models/animated/Fox.glb#Scene0");
-        let main_scene =
-            asset_server.load("models/IrradianceVolumeExample/IrradianceVolumeExample.glb#Scene0");
-        let irradiance_volume = asset_server.load::<Image>("irradiance_volumes/Example.vxgi.ktx2");
         let fox_animation =
-            asset_server.load::<AnimationClip>("models/animated/Fox.glb#Animation1");
-
-        // Just use a specular map for the skybox since it's not too blurry.
-        // In reality you wouldn't do this--you'd use a real skybox texture--but
-        // reusing the textures like this saves space in the Bevy repository.
-        let skybox = asset_server.load::<Image>("environment_maps/pisa_specular_rgb9e5_zstd.ktx2");
-
-        let mut mesh_assets = world.resource_mut::<Assets<Mesh>>();
-        let main_sphere = mesh_assets.add(Sphere::default().mesh().uv(32, 18));
-        let voxel_cube = mesh_assets.add(Cuboid::default());
-
-        let mut standard_material_assets = world.resource_mut::<Assets<StandardMaterial>>();
-        let main_material = standard_material_assets.add(Color::SILVER);
+            world.load_asset(GltfAssetLabel::Animation(1).from_asset("models/animated/Fox.glb"));
+        let (fox_animation_graph, fox_animation_node) =
+            AnimationGraph::from_clip(fox_animation.clone());
 
         ExampleAssets {
-            main_sphere,
-            fox,
-            main_sphere_material: main_material,
-            main_scene,
-            irradiance_volume,
-            fox_animation,
-            voxel_cube,
-            skybox,
+            main_sphere: world.add_asset(Sphere::default().mesh().uv(32, 18)),
+            fox: world.load_asset(GltfAssetLabel::Scene(0).from_asset("models/animated/Fox.glb")),
+            main_sphere_material: world.add_asset(Color::from(SILVER)),
+            main_scene: world.load_asset(
+                GltfAssetLabel::Scene(0)
+                    .from_asset("models/IrradianceVolumeExample/IrradianceVolumeExample.glb"),
+            ),
+            irradiance_volume: world.load_asset("irradiance_volumes/Example.vxgi.ktx2"),
+            fox_animation_graph: world.add_asset(fox_animation_graph),
+            fox_animation_node,
+            voxel_cube: world.add_asset(Cuboid::default()),
+            // Just use a specular map for the skybox since it's not too blurry.
+            // In reality you wouldn't do this--you'd use a real skybox texture--but
+            // reusing the textures like this saves space in the Bevy repository.
+            skybox: world.load_asset("environment_maps/pisa_specular_rgb9e5_zstd.ktx2"),
         }
     }
 }
 
 // Plays the animation on the fox.
-fn play_animations(assets: Res<ExampleAssets>, mut players: Query<&mut AnimationPlayer>) {
-    for mut player in players.iter_mut() {
-        // This will safely do nothing if the animation is already playing.
-        player.play(assets.fox_animation.clone()).repeat();
+fn play_animations(
+    mut commands: Commands,
+    assets: Res<ExampleAssets>,
+    mut players: Query<(Entity, &mut AnimationPlayer), Without<Handle<AnimationGraph>>>,
+) {
+    for (entity, mut player) in players.iter_mut() {
+        commands
+            .entity(entity)
+            .insert(assets.fox_animation_graph.clone());
+        player.play(assets.fox_animation_node).repeat();
     }
 }
 
@@ -580,11 +568,11 @@ fn create_cubes(
         let resolution = image.texture_descriptor.size;
 
         let voxel_cube_material = voxel_visualization_material_assets.add(ExtendedMaterial {
-            base: StandardMaterial::from(Color::RED),
+            base: StandardMaterial::from(Color::from(RED)),
             extension: VoxelVisualizationExtension {
                 irradiance_volume_info: VoxelVisualizationIrradianceVolumeInfo {
-                    transform: VOXEL_TRANSFORM.inverse(),
-                    inverse_transform: VOXEL_TRANSFORM,
+                    world_from_voxel: VOXEL_FROM_WORLD.inverse(),
+                    voxel_from_world: VOXEL_FROM_WORLD,
                     resolution: uvec3(
                         resolution.width,
                         resolution.height,

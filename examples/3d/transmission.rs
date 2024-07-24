@@ -21,14 +21,17 @@
 use std::f32::consts::PI;
 
 use bevy::{
+    color::palettes::css::*,
     core_pipeline::{
         bloom::BloomSettings, core_3d::ScreenSpaceTransmissionQuality, prepass::DepthPrepass,
         tonemapping::Tonemapping,
     },
     pbr::{NotShadowCaster, PointLightShadowMap, TransmittedShadowReceiver},
     prelude::*,
-    render::camera::{Exposure, TemporalJitter},
-    render::view::ColorGrading,
+    render::{
+        camera::{Exposure, TemporalJitter},
+        view::{ColorGrading, ColorGradingGlobal},
+    },
 };
 
 #[cfg(not(all(feature = "webgl2", target_arch = "wasm32")))]
@@ -117,7 +120,7 @@ fn setup(
         PbrBundle {
             mesh: cylinder_mesh,
             material: materials.add(StandardMaterial {
-                base_color: Color::rgba(0.9, 0.2, 0.3, 1.0),
+                base_color: Color::srgb(0.9, 0.2, 0.3),
                 diffuse_transmission: 0.7,
                 perceptual_roughness: 0.32,
                 thickness: 0.2,
@@ -134,11 +137,20 @@ fn setup(
     ));
 
     // Candle Flame
+    let scaled_white = LinearRgba::from(ANTIQUE_WHITE) * 20.;
+    let scaled_orange = LinearRgba::from(ORANGE_RED) * 4.;
+    let emissive = LinearRgba {
+        red: scaled_white.red + scaled_orange.red,
+        green: scaled_white.green + scaled_orange.green,
+        blue: scaled_white.blue + scaled_orange.blue,
+        alpha: 1.0,
+    };
+
     commands.spawn((
         PbrBundle {
             mesh: icosphere_mesh.clone(),
             material: materials.add(StandardMaterial {
-                emissive: Color::ANTIQUE_WHITE * 80.0 + Color::ORANGE_RED * 16.0,
+                emissive,
                 diffuse_transmission: 1.0,
                 ..default()
             }),
@@ -177,7 +189,7 @@ fn setup(
         PbrBundle {
             mesh: icosphere_mesh.clone(),
             material: materials.add(StandardMaterial {
-                base_color: Color::RED,
+                base_color: RED.into(),
                 specular_transmission: 0.9,
                 diffuse_transmission: 1.0,
                 thickness: 1.8,
@@ -200,7 +212,7 @@ fn setup(
         PbrBundle {
             mesh: icosphere_mesh.clone(),
             material: materials.add(StandardMaterial {
-                base_color: Color::GREEN,
+                base_color: LIME.into(),
                 specular_transmission: 0.9,
                 diffuse_transmission: 1.0,
                 thickness: 1.8,
@@ -223,7 +235,7 @@ fn setup(
         PbrBundle {
             mesh: icosphere_mesh,
             material: materials.add(StandardMaterial {
-                base_color: Color::BLUE,
+                base_color: BLUE.into(),
                 specular_transmission: 0.9,
                 diffuse_transmission: 1.0,
                 thickness: 1.8,
@@ -309,7 +321,9 @@ fn setup(
         PointLightBundle {
             transform: Transform::from_xyz(-1.0, 1.7, 0.0),
             point_light: PointLight {
-                color: Color::ANTIQUE_WHITE * 0.8 + Color::ORANGE_RED * 0.2,
+                color: Color::from(
+                    LinearRgba::from(ANTIQUE_WHITE).mix(&LinearRgba::from(ORANGE_RED), 0.2),
+                ),
                 intensity: 4_000.0,
                 radius: 0.2,
                 range: 5.0,
@@ -330,7 +344,10 @@ fn setup(
             },
             transform: Transform::from_xyz(1.0, 1.8, 7.0).looking_at(Vec3::ZERO, Vec3::Y),
             color_grading: ColorGrading {
-                post_saturation: 1.2,
+                global: ColorGradingGlobal {
+                    post_saturation: 1.2,
+                    ..default()
+                },
                 ..default()
             },
             tonemapping: Tonemapping::TonyMcMapface,
@@ -348,17 +365,13 @@ fn setup(
     ));
 
     // Controls Text
-    let text_style = TextStyle {
-        font_size: 18.0,
-        color: Color::WHITE,
-        ..Default::default()
-    };
+    let text_style = TextStyle::default();
 
     commands.spawn((
         TextBundle::from_section("", text_style).with_style(Style {
             position_type: PositionType::Absolute,
-            top: Val::Px(10.0),
-            left: Val::Px(10.0),
+            top: Val::Px(12.0),
+            left: Val::Px(12.0),
             ..default()
         }),
         ExampleDisplay,
@@ -476,9 +489,8 @@ fn example_control_system(
         }
 
         if controls.color && randomize_colors {
-            material.base_color.set_r(random());
-            material.base_color.set_g(random());
-            material.base_color.set_b(random());
+            material.base_color =
+                Color::srgba(random(), random(), random(), material.base_color.alpha());
         }
     }
 

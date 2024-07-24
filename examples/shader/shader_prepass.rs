@@ -62,7 +62,7 @@ fn setup(
     // plane
     commands.spawn(PbrBundle {
         mesh: meshes.add(Plane3d::default().mesh().size(5.0, 5.0)),
-        material: std_materials.add(Color::rgb(0.3, 0.5, 0.3)),
+        material: std_materials.add(Color::srgb(0.3, 0.5, 0.3)),
         ..default()
     });
 
@@ -87,7 +87,7 @@ fn setup(
         MaterialMeshBundle {
             mesh: meshes.add(Cuboid::default()),
             material: materials.add(CustomMaterial {
-                color: Color::WHITE,
+                color: LinearRgba::WHITE,
                 color_texture: Some(asset_server.load("branding/icon.png")),
                 alpha_mode: AlphaMode::Opaque,
             }),
@@ -114,7 +114,7 @@ fn setup(
     commands.spawn(MaterialMeshBundle {
         mesh: meshes.add(Cuboid::default()),
         material: materials.add(CustomMaterial {
-            color: Color::WHITE,
+            color: LinearRgba::WHITE,
             color_texture: Some(asset_server.load("branding/icon.png")),
             alpha_mode: AlphaMode::Blend,
         }),
@@ -132,10 +132,7 @@ fn setup(
         ..default()
     });
 
-    let style = TextStyle {
-        font_size: 18.0,
-        ..default()
-    };
+    let style = TextStyle::default();
 
     commands.spawn(
         TextBundle::from_sections(vec![
@@ -147,8 +144,8 @@ fn setup(
         ])
         .with_style(Style {
             position_type: PositionType::Absolute,
-            top: Val::Px(10.0),
-            left: Val::Px(10.0),
+            top: Val::Px(12.0),
+            left: Val::Px(12.0),
             ..default()
         }),
     );
@@ -158,7 +155,7 @@ fn setup(
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 struct CustomMaterial {
     #[uniform(0)]
-    color: Color,
+    color: LinearRgba,
     #[texture(1)]
     #[sampler(2)]
     color_texture: Option<Handle<Image>>,
