@@ -58,6 +58,7 @@ use bevy_utils::prelude::default;
 pub use extract_param::Extract;
 
 use bevy_hierarchy::ValidParentCheckPlugin;
+use extract_resource::ExtractResourcePlugin;
 use globals::GlobalsPlugin;
 use render_asset::RenderAssetBytesPerFrame;
 use renderer::{RenderAdapter, RenderAdapterInfo, RenderDevice, RenderQueue};

@@ -244,24 +244,9 @@ where
 
     /// Returns `true` if any item in `inputs` has just been pressed or repeated.
     pub fn any_just_pressed_or_repeated(&self, inputs: impl IntoIterator<Item = T>) -> bool {
-        inputs.into_iter().any(|it| self.just_pressed_or_repeated(it))
-    }
-
-    /// Clears the `just_pressed_or_repeated` state of the `input` and returns `true` if the `input` has just been pressed or repeated.
-    ///
-    /// Future calls to [`Input::just_pressed_or_repeated`] for the given input will return false until a new press event occurs.
-    pub fn clear_just_pressed_or_repeated(&mut self, input: T) -> bool {
-        self.just_pressed_or_repeated.remove(&input)
-    }
-
-    /// Returns `true` if the `input` has just been pressed or repeated.
-    pub fn just_pressed_or_repeated(&self, input: T) -> bool {
-        self.just_pressed_or_repeated.contains(&input)
-    }
-
-    /// Returns `true` if any item in `inputs` has just been pressed or repeated.
-    pub fn any_just_pressed_or_repeated(&self, inputs: impl IntoIterator<Item = T>) -> bool {
-        inputs.into_iter().any(|it| self.just_pressed_or_repeated(it))
+        inputs
+            .into_iter()
+            .any(|it| self.just_pressed_or_repeated(it))
     }
 
     /// Clears the `just_pressed_or_repeated` state of the `input` and returns `true` if the `input` has just been pressed or repeated.

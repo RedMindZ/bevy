@@ -846,58 +846,53 @@ pub fn prepare_view_targets(
             _ => Some(clear_color_global.0),
         };
 
-                let (a, b, sampled, main_texture) = textures
-                    .entry((camera.target.clone(), view.hdr))
-                    .or_insert_with(|| {
-                        let descriptor = TextureDescriptor {
-                            label: None,
-                            size,
-                            mip_level_count: 1,
-                            sample_count: 1,
-                            dimension: TextureDimension::D2,
-                            format: main_texture_format,
-                            usage: texture_usage.0,
-                            view_formats: match main_texture_format {
-                                TextureFormat::Bgra8Unorm => &[TextureFormat::Bgra8UnormSrgb],
-                                TextureFormat::Rgba8Unorm => &[TextureFormat::Rgba8UnormSrgb],
-                                _ => &[],
-                            },
-                        };
-                        let a = texture_cache.get(
-                            &render_device,
-                            TextureDescriptor {
-                                label: Some("main_texture_a"),
-                                ..descriptor
-                            },
-                        );
-                        let b = texture_cache.get(
-                            &render_device,
-                            TextureDescriptor {
-                                label: Some("main_texture_b"),
-                                ..descriptor
-                            },
-                        );
-                        let sampled = if msaa.samples() > 1 {
-                            let sampled = texture_cache.get(
-                                &render_device,
-                                TextureDescriptor {
-                                    label: Some("main_texture_sampled"),
-                                    size,
-                                    mip_level_count: 1,
-                                    sample_count: msaa.samples(),
-                                    dimension: TextureDimension::D2,
-                                    format: main_texture_format,
-                                    usage: TextureUsages::RENDER_ATTACHMENT,
-                                    view_formats: descriptor.view_formats,
-                                },
-                            );
-                            Some(sampled)
-                        } else {
-                            None
-                        };
-                        let main_texture = Arc::new(AtomicUsize::new(0));
-                        (a, b, sampled, main_texture)
-                    });
+        let (a, b, sampled, main_texture) = textures
+            .entry((camera.target.clone(), view.hdr))
+            .or_insert_with(|| {
+                let descriptor = TextureDescriptor {
+                    label: None,
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format: main_texture_format,
+                    usage: texture_usage.0,
+                    view_formats: match main_texture_format {
+                        TextureFormat::Bgra8Unorm => &[TextureFormat::Bgra8UnormSrgb],
+                        TextureFormat::Rgba8Unorm => &[TextureFormat::Rgba8UnormSrgb],
+                        _ => &[],
+                    },
+                };
+                let a = texture_cache.get(
+                    &render_device,
+                    TextureDescriptor {
+                        label: Some("main_texture_a"),
+                        ..descriptor
+                    },
+                );
+                let b = texture_cache.get(
+                    &render_device,
+                    TextureDescriptor {
+                        label: Some("main_texture_b"),
+                        ..descriptor
+                    },
+                );
+                let sampled = if msaa.samples() > 1 {
+                    let sampled = texture_cache.get(
+                        &render_device,
+                        TextureDescriptor {
+                            label: Some("main_texture_sampled"),
+                            sample_count: msaa.samples(),
+                            ..descriptor
+                        },
+                    );
+                    Some(sampled)
+                } else {
+                    None
+                };
+                let main_texture = Arc::new(AtomicUsize::new(0));
+                (a, b, sampled, main_texture)
+            });
 
         let converted_clear_color = clear_color.map(|color| color.into());
 

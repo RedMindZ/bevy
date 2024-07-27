@@ -443,7 +443,7 @@ impl ExecutorState {
                     //       we must only add the system to the unapplied systems after it has
                     //       executed, since otherwise we would apply it twice.
                     self.unapplied_systems.push(system_index);
-                break;
+                    break;
                 }
 
                 // SAFETY:
@@ -453,8 +453,8 @@ impl ExecutorState {
                 unsafe {
                     self.spawn_system_task(context, system_index);
                 }
+                self.unapplied_systems.push(system_index);
             }
-            self.unapplied_systems.push(system_index);
         }
 
         // give back

@@ -191,6 +191,7 @@ fn renderer_extract(app_world: &mut World, _world: &mut World) {
                     })
                     .pop()
                     .unwrap()
+                    .unwrap()
             };
 
             {
