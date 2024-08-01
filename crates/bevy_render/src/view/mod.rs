@@ -39,7 +39,7 @@ use std::{
 };
 use wgpu::{
     BufferUsages, Extent3d, RenderPassColorAttachment, RenderPassDepthStencilAttachment, StoreOp,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
+    TextureDescriptor, TextureDimension, TextureFormat,
 };
 
 pub const VIEW_TYPE_HANDLE: Handle<Shader> = Handle::weak_from_u128(15421373904451797197);
@@ -685,6 +685,18 @@ impl ViewTarget {
             }
         }
     }
+
+    pub fn mark_as_dirty(&self) {
+        self.main_textures.a.mark_as_dirty();
+        self.main_textures.b.mark_as_dirty();
+        self.out_texture.mark_as_dirty();
+    }
+
+    pub fn mark_as_cleared(&self) {
+        self.main_textures.a.mark_as_cleared();
+        self.main_textures.b.mark_as_cleared();
+        self.out_texture.mark_as_cleared();
+    }
 }
 
 #[derive(Component)]
@@ -707,6 +719,14 @@ impl ViewDepthTexture {
 
     pub fn view(&self) -> &TextureView {
         &self.attachment.view
+    }
+
+    pub fn mark_as_dirty(&self) {
+        self.attachment.mark_as_dirty();
+    }
+
+    pub fn mark_as_cleared(&self) {
+        self.attachment.mark_as_cleared();
     }
 }
 

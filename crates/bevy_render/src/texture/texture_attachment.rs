@@ -76,7 +76,11 @@ impl ColorAttachment {
         }
     }
 
-    pub(crate) fn mark_as_cleared(&self) {
+    pub fn mark_as_dirty(&self) {
+        self.is_first_call.store(true, Ordering::SeqCst);
+    }
+
+    pub fn mark_as_cleared(&self) {
         self.is_first_call.store(false, Ordering::SeqCst);
     }
 }
@@ -119,6 +123,14 @@ impl DepthAttachment {
             stencil_ops: None,
         }
     }
+
+    pub fn mark_as_dirty(&self) {
+        self.is_first_call.store(true, Ordering::SeqCst);
+    }
+
+    pub fn mark_as_cleared(&self) {
+        self.is_first_call.store(false, Ordering::SeqCst);
+    }
 }
 
 /// A wrapper for a [`TextureView`] that is used as a [`RenderPassColorAttachment`] for a view
@@ -156,5 +168,13 @@ impl OutputColorAttachment {
                 store: StoreOp::Store,
             },
         }
+    }
+
+    pub fn mark_as_dirty(&self) {
+        self.is_first_call.store(true, Ordering::SeqCst);
+    }
+
+    pub fn mark_as_cleared(&self) {
+        self.is_first_call.store(false, Ordering::SeqCst);
     }
 }
