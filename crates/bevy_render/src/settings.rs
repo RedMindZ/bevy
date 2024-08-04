@@ -135,7 +135,7 @@ impl Default for WgpuSettings {
 }
 
 impl WgpuSettings {
-    pub fn with_backends_and_power_preference(
+    pub fn with_backends_and_power_preference_and_dxc(
         backends: &[Backend],
         power_preference: PowerPreference,
     ) -> Self {
@@ -165,6 +165,10 @@ impl WgpuSettings {
         Self {
             backends: Some(backends),
             power_preference,
+            dx12_shader_compiler: Dx12Compiler::Dxc {
+                dxil_path: None,
+                dxc_path: None,
+            },
             ..Default::default()
         }
     }
