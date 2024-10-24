@@ -1,7 +1,7 @@
 //! Shows how to create a custom event that can be handled by `winit`'s event loop.
 
 use bevy::prelude::*;
-use bevy::winit::{EventLoopProxy, WakeUp, WinitPlugin};
+use bevy::winit::{EventLoopProxy, EventLoopProxyResource, WakeUp, WinitPlugin};
 use std::fmt::Formatter;
 use std::sync::OnceLock;
 
@@ -72,8 +72,8 @@ fn send_event(input: Res<ButtonInput<KeyCode>>) {
     }
 }
 
-fn expose_event_loop_proxy(event_loop_proxy: NonSend<EventLoopProxy<CustomEvent>>) {
-    EVENT_LOOP_PROXY.set((*event_loop_proxy).clone()).unwrap();
+fn expose_event_loop_proxy(event_loop_proxy: Res<EventLoopProxyResource<CustomEvent>>) {
+    EVENT_LOOP_PROXY.set(event_loop_proxy.clone()).unwrap();
 }
 
 fn handle_event(mut events: EventReader<CustomEvent>) {

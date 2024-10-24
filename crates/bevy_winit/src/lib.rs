@@ -12,6 +12,7 @@
 //! The app's [runner](bevy_app::App::runner) is set by `WinitPlugin` and handles the `winit` [`EventLoop`].
 //! See `winit_runner` for details.
 
+use bevy_derive::Deref;
 use bevy_window::RawHandleWrapperHolder;
 use std::marker::PhantomData;
 use winit::event_loop::EventLoop;
@@ -146,8 +147,12 @@ pub struct WakeUp;
 ///
 /// The `EventLoopProxy` can be used to request a redraw from outside bevy.
 ///
-/// Use `NonSend<EventLoopProxy>` to receive this resource.
+/// Use `Res<EventLoopProxyResource>` to receive this resource.
 pub type EventLoopProxy<T> = winit::event_loop::EventLoopProxy<T>;
+
+/// The resource containing the [`EventLoopProxy`]
+#[derive(Resource, Deref)]
+pub struct EventLoopProxyResource<T: 'static>(EventLoopProxy<T>);
 
 trait AppSendEvent {
     fn send(&mut self, event: impl Into<WinitEvent>);
