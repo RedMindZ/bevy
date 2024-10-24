@@ -754,9 +754,6 @@ pub fn winit_runner<T: Event>(mut app: App) -> AppExit {
         .remove_non_send_resource::<EventLoop<T>>()
         .unwrap();
 
-    app.world_mut()
-        .insert_resource(EventLoopProxyResource(event_loop.create_proxy()));
-
     let mut runner_state = WinitAppRunnerState::new(app);
 
     trace!("starting winit event loop");

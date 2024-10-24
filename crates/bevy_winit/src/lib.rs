@@ -132,6 +132,9 @@ impl<T: Event> Plugin for WinitPlugin<T> {
             .build()
             .expect("Failed to build event loop");
 
+        app.world_mut()
+            .insert_resource(EventLoopProxyResource(event_loop.create_proxy()));
+
         // `winit`'s windows are bound to the event loop that created them, so the event loop must
         // be inserted as a resource here to pass it onto the runner.
         app.insert_non_send_resource(event_loop);
@@ -152,7 +155,7 @@ pub type EventLoopProxy<T> = winit::event_loop::EventLoopProxy<T>;
 
 /// The resource containing the [`EventLoopProxy`]
 #[derive(Resource, Deref)]
-pub struct EventLoopProxyResource<T: 'static>(EventLoopProxy<T>);
+pub struct EventLoopProxyResource<T: 'static>(pub EventLoopProxy<T>);
 
 trait AppSendEvent {
     fn send(&mut self, event: impl Into<WinitEvent>);
