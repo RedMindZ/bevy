@@ -225,7 +225,18 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
                     &mut window_scale_factor_changed,
                 );
             }
-            WindowEvent::CloseRequested => self.winit_events.send(WindowCloseRequested { window }),
+            WindowEvent::CloseRequested => {
+                self.winit_events.send(WindowCloseRequested { window });
+
+                // Closing the window requires running an update on the app,
+                // so we request a redraw to get `about_to_wait` to run.
+                // For some reason, `about_to_wait` doesn't get called
+                // naturally after a window close request, so we use
+                // this hack to run the app.
+                if let Some(winit_window) = winit_windows.get_window(window) {
+                    winit_window.request_redraw();
+                }
+            }
             WindowEvent::KeyboardInput {
                 ref event,
                 is_synthetic,
@@ -408,16 +419,8 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
         create_windows(event_loop, create_window.get_mut(self.world_mut()));
         create_window.apply(self.world_mut());
 
-        let mut redraw_event_reader = ManualEventReader::<RequestRedraw>::default();
-
         let mut focused_windows_state: SystemState<(Res<WinitSettings>, Query<(Entity, &Window)>)> =
             SystemState::new(self.world_mut());
-
-        if let Some(app_redraw_events) = self.world().get_resource::<Events<RequestRedraw>>() {
-            if redraw_event_reader.read(app_redraw_events).last().is_some() {
-                self.redraw_requested = true;
-            }
-        }
 
         let (config, windows) = focused_windows_state.get(self.world());
         let focused = windows.iter().any(|(_, window)| window.focused);
@@ -508,15 +511,24 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
             if !self.ran_update_since_last_redraw {
                 self.run_app_update();
                 self.ran_update_since_last_redraw = true;
+
+                // Running the app may have changed the WinitSettings resource, so we have to re-extract it.
+                let (config, windows) = focused_windows_state.get(self.world());
+                let focused = windows.iter().any(|(_, window)| window.focused);
+                update_mode = config.update_mode(focused);
+
+                // Running the app may have requested a redraw, so we check the events.
+                let mut redraw_event_reader = ManualEventReader::<RequestRedraw>::default();
+                if let Some(app_redraw_events) =
+                    self.world().get_resource::<Events<RequestRedraw>>()
+                {
+                    if redraw_event_reader.read(app_redraw_events).last().is_some() {
+                        self.redraw_requested = true;
+                    }
+                }
             } else {
                 self.redraw_requested = true;
             }
-
-            // Running the app may have changed the WinitSettings resource, so we have to re-extract it.
-            let (config, windows) = focused_windows_state.get(self.world());
-            let focused = windows.iter().any(|(_, window)| window.focused);
-
-            update_mode = config.update_mode(focused);
         }
 
         // The update mode could have been changed, so we need to redraw and force an update

@@ -4,7 +4,7 @@ use bevy_ecs::{
     prelude::{Changed, Component},
     query::QueryFilter,
     removal_detection::RemovedComponents,
-    system::{Local, NonSendMut, Query, SystemParamItem},
+    system::{Local, NonSendMut, Query, Res, SystemParamItem},
 };
 use bevy_utils::tracing::{error, info, warn};
 use bevy_window::{
@@ -23,7 +23,6 @@ use winit::platform::ios::WindowExtIOS;
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::WindowExtWebSys;
 
-use crate::state::react_to_resize;
 use crate::{
     converters::{
         self, convert_enabled_buttons, convert_window_level, convert_window_theme,
@@ -31,6 +30,7 @@ use crate::{
     },
     get_best_videomode, get_fitting_videomode, CreateWindowParams, WinitWindows,
 };
+use crate::{state::react_to_resize, EventLoopProxyResource, WakeUp};
 
 /// Creates new windows on the [`winit`] backend for each entity with a newly-added
 /// [`Window`] component.
@@ -128,6 +128,7 @@ pub(crate) fn despawn_windows(
     mut winit_windows: NonSendMut<WinitWindows>,
     mut windows_to_drop: Local<Vec<WindowWrapper<winit::window::Window>>>,
     mut exit_events: EventReader<AppExit>,
+    event_loop_proxy: Res<EventLoopProxyResource<WakeUp>>,
 ) {
     // Drop all the windows that are waiting to be closed
     windows_to_drop.clear();
@@ -146,6 +147,9 @@ pub(crate) fn despawn_windows(
                 // This would hang on macOS
                 // Keeping the wrapper and dropping it next frame in this system ensure its dropped in the main thread
                 windows_to_drop.push(window);
+
+                // Make sure there is another frame to drop the queued windows
+                event_loop_proxy.send_event(WakeUp).ok();
             }
             closed_events.send(WindowClosed { window });
         }

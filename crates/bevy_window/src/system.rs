@@ -1,4 +1,4 @@
-use crate::{ClosingWindow, PrimaryWindow, Window, WindowCloseRequested};
+use crate::{ClosingWindow, PrimaryWindow, RequestRedraw, Window, WindowCloseRequested};
 
 use bevy_app::AppExit;
 use bevy_ecs::prelude::*;
@@ -43,6 +43,7 @@ pub fn close_when_requested(
     mut commands: Commands,
     mut closed: EventReader<WindowCloseRequested>,
     closing: Query<Entity, With<ClosingWindow>>,
+    mut redraw: EventWriter<RequestRedraw>,
 ) {
     // This was inserted by us on the last frame so now we can despawn the window
     for window in closing.iter() {
@@ -51,5 +52,8 @@ pub fn close_when_requested(
     // Mark the window as closing so we can despawn it on the next frame
     for event in closed.read() {
         commands.entity(event.window).insert(ClosingWindow);
+
+        // Make sure there will be another frame to close the window
+        redraw.send(RequestRedraw);
     }
 }
