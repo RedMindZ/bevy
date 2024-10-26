@@ -37,8 +37,8 @@ use bevy_window::{PrimaryWindow, RawHandleWrapper};
 use crate::accessibility::AccessKitAdapters;
 use crate::system::CachedWindow;
 use crate::{
-    converters, create_windows, AppSendEvent, CreateWindowParams, EventLoopProxyResource,
-    UpdateMode, WinitEvent, WinitSettings, WinitWindows,
+    converters, create_windows, AppSendEvent, CreateWindowParams, UpdateMode, WinitEvent,
+    WinitSettings, WinitWindows,
 };
 
 /// Persistent state that is used to run the [`App`] according to the current
