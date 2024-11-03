@@ -30,11 +30,11 @@ pub mod prelude {
 }
 
 use bevy_app::{prelude::*, RunFixedMainLoop};
-use bevy_ecs::event::{signal_event_update_system, EventRegistry, ShouldUpdateEvents};
+// use bevy_ecs::event::{signal_event_update_system, EventRegistry, ShouldUpdateEvents};
 use bevy_ecs::prelude::*;
-use bevy_utils::{tracing::warn, Duration, Instant};
+use bevy_utils::{Duration, Instant};
 pub use crossbeam_channel::TrySendError;
-use crossbeam_channel::{Receiver, Sender};
+// use crossbeam_channel::{Receiver, Sender};
 
 /// Adds time functionality to Apps.
 #[derive(Default)]
@@ -92,21 +92,21 @@ pub enum TimeUpdateStrategy {
     ManualDuration(Duration),
 }
 
-/// Channel resource used to receive time from the render world.
-#[derive(Resource)]
-pub struct TimeReceiver(pub Receiver<Instant>);
+// /// Channel resource used to receive time from the render world.
+// #[derive(Resource)]
+// pub struct TimeReceiver(pub Receiver<Instant>);
 
-/// Channel resource used to send time from the render world.
-#[derive(Resource)]
-pub struct TimeSender(pub Sender<Instant>);
+// /// Channel resource used to send time from the render world.
+// #[derive(Resource)]
+// pub struct TimeSender(pub Sender<Instant>);
 
-/// Creates channels used for sending time between the render world and the main world.
-pub fn create_time_channels() -> (TimeSender, TimeReceiver) {
-    // bound the channel to 2 since when pipelined the render phase can finish before
-    // the time system runs.
-    let (s, r) = crossbeam_channel::bounded::<Instant>(2);
-    (TimeSender(s), TimeReceiver(r))
-}
+// /// Creates channels used for sending time between the render world and the main world.
+// pub fn create_time_channels() -> (TimeSender, TimeReceiver) {
+//     // bound the channel to 2 since when pipelined the render phase can finish before
+//     // the time system runs.
+//     let (s, r) = crossbeam_channel::bounded::<Instant>(2);
+//     (TimeSender(s), TimeReceiver(r))
+// }
 
 /// The system used to update the [`Time`] used by app logic. If there is a render world the time is
 /// sent from there to this system through channels. Otherwise the time is updated in this system.
@@ -115,23 +115,25 @@ pub fn time_system(
     mut virtual_time: ResMut<Time<Virtual>>,
     mut time: ResMut<Time>,
     update_strategy: Res<TimeUpdateStrategy>,
-    time_recv: Option<Res<TimeReceiver>>,
-    mut has_received_time: Local<bool>,
+    // time_recv: Option<Res<TimeReceiver>>,
+    // mut has_received_time: Local<bool>,
 ) {
-    let new_time = if let Some(time_recv) = time_recv {
-        // TODO: Figure out how to handle this when using pipelined rendering.
-        if let Ok(new_time) = time_recv.0.try_recv() {
-            *has_received_time = true;
-            new_time
-        } else {
-            if *has_received_time {
-                warn!("time_system did not receive the time from the render world! Calculations depending on the time may be incorrect.");
-            }
-            Instant::now()
-        }
-    } else {
-        Instant::now()
-    };
+    // let new_time = if let Some(time_recv) = time_recv {
+    //     // TODO: Figure out how to handle this when using pipelined rendering.
+    //     if let Ok(new_time) = time_recv.0.try_recv() {
+    //         *has_received_time = true;
+    //         new_time
+    //     } else {
+    //         if *has_received_time {
+    //             warn!("time_system did not receive the time from the render world! Calculations depending on the time may be incorrect.");
+    //         }
+    //         Instant::now()
+    //     }
+    // } else {
+    //     Instant::now()
+    // };
+
+    let new_time = Instant::now();
 
     match update_strategy.as_ref() {
         TimeUpdateStrategy::Automatic => real_time.update_with_instant(new_time),

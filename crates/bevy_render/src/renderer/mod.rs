@@ -16,13 +16,12 @@ use crate::{
     view::{ExtractedWindows, ViewTarget},
 };
 use bevy_ecs::{prelude::*, system::SystemState};
-use bevy_time::TimeSender;
-use bevy_utils::Instant;
+// use bevy_time::TimeSender;
+// use bevy_utils::Instant;
 use std::sync::Arc;
 use wgpu::{
     Adapter, AdapterInfo, Backend, CommandBuffer, CommandEncoder, DeviceType, Instance,
     PowerPreference, Queue,
-   
 };
 
 /// Updates the [`RenderGraph`] with all of its nodes and then runs it to render the entire frame.
@@ -106,18 +105,18 @@ pub fn render_system(world: &mut World, state: &mut SystemState<Query<Entity, Wi
 
     crate::view::screenshot::collect_screenshots(world);
 
-    // update the time and send it to the app world
-    let time_sender = world.resource::<TimeSender>();
-    if let Err(error) = time_sender.0.try_send(Instant::now()) {
-        match error {
-            bevy_time::TrySendError::Full(_) => {
-                panic!("The TimeSender channel should always be empty during render. You might need to add the bevy::core::time_system to your app.",);
-            }
-            bevy_time::TrySendError::Disconnected(_) => {
-                // ignore disconnected errors, the main world probably just got dropped during shutdown
-            }
-        }
-    }
+    // // update the time and send it to the app world
+    // let time_sender = world.resource::<TimeSender>();
+    // if let Err(error) = time_sender.0.try_send(Instant::now()) {
+    //     match error {
+    //         bevy_time::TrySendError::Full(_) => {
+    //             panic!("The TimeSender channel should always be empty during render. You might need to add the bevy::core::time_system to your app.",);
+    //         }
+    //         bevy_time::TrySendError::Disconnected(_) => {
+    //             // ignore disconnected errors, the main world probably just got dropped during shutdown
+    //         }
+    //     }
+    // }
 }
 
 /// A wrapper to safely make `wgpu` types Send / Sync on web with atomics enabled.
@@ -169,15 +168,15 @@ pub struct RenderInstance(pub Arc<WgpuWrapper<Instance>>);
 #[derive(Resource, Clone, Deref, DerefMut)]
 pub struct RenderAdapterInfo(pub WgpuWrapper<AdapterInfo>);
 
-const GPU_NOT_FOUND_ERROR_MESSAGE: &str = if cfg!(target_os = "linux") {
-    "Unable to find a GPU! Make sure you have installed required drivers! For extra information, see: https://github.com/bevyengine/bevy/blob/latest/docs/linux_dependencies.md"
-} else {
-    "Unable to find a GPU! Make sure you have installed required drivers!"
-};
+// const GPU_NOT_FOUND_ERROR_MESSAGE: &str = if cfg!(target_os = "linux") {
+//     "Unable to find a GPU! Make sure you have installed required drivers! For extra information, see: https://github.com/bevyengine/bevy/blob/latest/docs/linux_dependencies.md"
+// } else {
+//     "Unable to find a GPU! Make sure you have installed required drivers!"
+// };
 
 /// Attempts to create a [`wgpu::Instance`] and [`wgpu::Adapter`] with the
 /// first requested backend that has an adapter with the requested power preference.
-/// 
+///
 /// Prioritizes power preference over backend.
 pub fn create_instance_and_adapter(
     requested_backends: &[Backend],
