@@ -581,6 +581,8 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
                     if self.wait_elapsed {
                         event_loop.set_control_flow(ControlFlow::WaitUntil(next));
                     }
+                } else {
+                    event_loop.set_control_flow(ControlFlow::Wait);
                 }
             }
         }
