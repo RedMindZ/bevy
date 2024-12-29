@@ -7,7 +7,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use async_executor::FallibleTask;
+use async_task::FallibleTask;
 use concurrent_queue::ConcurrentQueue;
 use futures_lite::FutureExt;
 
@@ -107,7 +107,7 @@ impl TaskPoolBuilder {
 #[derive(Debug)]
 pub struct TaskPool {
     /// The executor for the pool.
-    executor: Arc<async_executor::Executor<'static>>,
+    executor: Arc<super::executor::Executor<'static>>,
 
     // The inner state of the pool.
     threads: Vec<JoinHandle<()>>,
@@ -116,7 +116,7 @@ pub struct TaskPool {
 
 impl TaskPool {
     thread_local! {
-        static LOCAL_EXECUTOR: async_executor::LocalExecutor<'static> = const { async_executor::LocalExecutor::new() };
+        static LOCAL_EXECUTOR: super::executor::LocalExecutor<'static> = const { super::executor::LocalExecutor::new() };
         static THREAD_EXECUTOR: Arc<ThreadExecutor<'static>> = Arc::new(ThreadExecutor::new());
     }
 
@@ -133,7 +133,7 @@ impl TaskPool {
     fn new_internal(builder: TaskPoolBuilder) -> Self {
         let (shutdown_tx, shutdown_rx) = async_channel::unbounded::<()>();
 
-        let executor = Arc::new(async_executor::Executor::new());
+        let executor = Arc::new(super::executor::Executor::new());
 
         let num_threads = builder
             .num_threads
@@ -349,9 +349,9 @@ impl TaskPool {
         // transmute the lifetimes to 'env here to appease the compiler as it is unable to validate safety.
         // Any usages of the references passed into `Scope` must be accessed through
         // the transmuted reference for the rest of this function.
-        let executor: &async_executor::Executor = &self.executor;
+        let executor: &super::executor::Executor = &self.executor;
         // SAFETY: As above, all futures must complete in this function so we can change the lifetime
-        let executor: &'env async_executor::Executor = unsafe { mem::transmute(executor) };
+        let executor: &'env super::executor::Executor = unsafe { mem::transmute(executor) };
         // SAFETY: As above, all futures must complete in this function so we can change the lifetime
         let external_executor: &'env ThreadExecutor<'env> =
             unsafe { mem::transmute(external_executor) };
@@ -437,7 +437,7 @@ impl TaskPool {
 
     #[inline]
     async fn execute_global_external_scope<'scope, 'ticker, T>(
-        executor: &'scope async_executor::Executor<'scope>,
+        executor: &'scope super::executor::Executor<'scope>,
         external_ticker: ThreadExecutorTicker<'scope, 'ticker>,
         scope_ticker: ThreadExecutorTicker<'scope, 'ticker>,
         get_results: impl Future<Output = Vec<T>>,
@@ -483,7 +483,7 @@ impl TaskPool {
 
     #[inline]
     async fn execute_global_scope<'scope, 'ticker, T>(
-        executor: &'scope async_executor::Executor<'scope>,
+        executor: &'scope super::executor::Executor<'scope>,
         scope_ticker: ThreadExecutorTicker<'scope, 'ticker>,
         get_results: impl Future<Output = Vec<T>>,
     ) -> Vec<T> {
@@ -529,11 +529,15 @@ impl TaskPool {
     ///
     /// If the provided future is non-`Send`, [`TaskPool::spawn_local`] should
     /// be used instead.
-    pub fn spawn<T>(&self, future: impl Future<Output = T> + Send + 'static) -> Task<T>
+    pub fn spawn<T>(
+        &self,
+        priority: isize,
+        future: impl Future<Output = T> + Send + 'static,
+    ) -> Task<T>
     where
         T: Send + 'static,
     {
-        Task::new(self.executor.spawn(future))
+        Task::new(self.executor.spawn(priority, future))
     }
 
     /// Spawns a static future on the thread-local async executor for the
@@ -547,11 +551,15 @@ impl TaskPool {
     ///
     /// Users should generally prefer to use [`TaskPool::spawn`] instead,
     /// unless the provided future is not `Send`.
-    pub fn spawn_local<T>(&self, future: impl Future<Output = T> + 'static) -> Task<T>
+    pub fn spawn_local<T>(
+        &self,
+        priority: isize,
+        future: impl Future<Output = T> + 'static,
+    ) -> Task<T>
     where
         T: 'static,
     {
-        Task::new(TaskPool::LOCAL_EXECUTOR.with(|executor| executor.spawn(future)))
+        Task::new(TaskPool::LOCAL_EXECUTOR.with(|executor| executor.spawn(priority, future)))
     }
 
     /// Runs a function with the local executor. Typically used to tick
@@ -567,7 +575,7 @@ impl TaskPool {
     /// ```
     pub fn with_local_executor<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&async_executor::LocalExecutor) -> R,
+        F: FnOnce(&super::executor::LocalExecutor) -> R,
     {
         Self::LOCAL_EXECUTOR.with(f)
     }
@@ -598,7 +606,7 @@ impl Drop for TaskPool {
 /// For more information, see [`TaskPool::scope`].
 #[derive(Debug)]
 pub struct Scope<'scope, 'env: 'scope, T> {
-    executor: &'scope async_executor::Executor<'scope>,
+    executor: &'scope super::executor::Executor<'scope>,
     external_executor: &'scope ThreadExecutor<'scope>,
     scope_executor: &'scope ThreadExecutor<'scope>,
     spawned: &'scope ConcurrentQueue<FallibleTask<Result<T, Box<(dyn std::any::Any + Send)>>>>,
@@ -616,10 +624,10 @@ impl<'scope, 'env, T: Send + 'scope> Scope<'scope, 'env, T> {
     /// instead.
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn<Fut: Future<Output = T> + 'scope + Send>(&self, f: Fut) {
+    pub fn spawn<Fut: Future<Output = T> + 'scope + Send>(&self, priority: isize, f: Fut) {
         let task = self
             .executor
-            .spawn(AssertUnwindSafe(f).catch_unwind())
+            .spawn(priority, AssertUnwindSafe(f).catch_unwind())
             .fallible();
         // ConcurrentQueue only errors when closed or full, but we never
         // close and use an unbounded queue, so it is safe to unwrap
@@ -632,10 +640,10 @@ impl<'scope, 'env, T: Send + 'scope> Scope<'scope, 'env, T> {
     /// [`Scope::spawn`] instead, unless the provided future needs to run on the scope's thread.
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn_on_scope<Fut: Future<Output = T> + 'scope + Send>(&self, f: Fut) {
+    pub fn spawn_on_scope<Fut: Future<Output = T> + 'scope + Send>(&self, priority: isize, f: Fut) {
         let task = self
             .scope_executor
-            .spawn(AssertUnwindSafe(f).catch_unwind())
+            .spawn(priority, AssertUnwindSafe(f).catch_unwind())
             .fallible();
         // ConcurrentQueue only errors when closed or full, but we never
         // close and use an unbounded queue, so it is safe to unwrap
@@ -649,10 +657,14 @@ impl<'scope, 'env, T: Send + 'scope> Scope<'scope, 'env, T> {
     /// [`Scope::spawn`] instead, unless the provided future needs to run on the external thread.
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn_on_external<Fut: Future<Output = T> + 'scope + Send>(&self, f: Fut) {
+    pub fn spawn_on_external<Fut: Future<Output = T> + 'scope + Send>(
+        &self,
+        priority: isize,
+        f: Fut,
+    ) {
         let task = self
             .external_executor
-            .spawn(AssertUnwindSafe(f).catch_unwind())
+            .spawn(priority, AssertUnwindSafe(f).catch_unwind())
             .fallible();
         // ConcurrentQueue only errors when closed or full, but we never
         // close and use an unbounded queue, so it is safe to unwrap
@@ -677,6 +689,7 @@ where
 #[allow(clippy::disallowed_types)]
 mod tests {
     use super::*;
+    use crate::DEFAULT_TASK_PRIORITY;
     use std::sync::{
         atomic::{AtomicBool, AtomicI32, Ordering},
         Barrier,
@@ -694,7 +707,7 @@ mod tests {
         let outputs = pool.scope(|scope| {
             for _ in 0..100 {
                 let count_clone = count.clone();
-                scope.spawn(async move {
+                scope.spawn(DEFAULT_TASK_PRIORITY, async move {
                     if *foo != 42 {
                         panic!("not 42!?!?")
                     } else {
@@ -778,7 +791,7 @@ mod tests {
             for i in 0..100 {
                 if i % 2 == 0 {
                     let count_clone = non_local_count.clone();
-                    scope.spawn(async move {
+                    scope.spawn(DEFAULT_TASK_PRIORITY, async move {
                         if *foo != 42 {
                             panic!("not 42!?!?")
                         } else {
@@ -788,7 +801,7 @@ mod tests {
                     });
                 } else {
                     let count_clone = local_count.clone();
-                    scope.spawn_on_scope(async move {
+                    scope.spawn_on_scope(DEFAULT_TASK_PRIORITY, async move {
                         if *foo != 42 {
                             panic!("not 42!?!?")
                         } else {
@@ -824,12 +837,12 @@ mod tests {
             thread::spawn(move || {
                 inner_pool.scope(|scope| {
                     let inner_count_clone = count_clone.clone();
-                    scope.spawn(async move {
+                    scope.spawn(DEFAULT_TASK_PRIORITY, async move {
                         inner_count_clone.fetch_add(1, Ordering::Release);
                     });
                     let spawner = thread::current().id();
                     let inner_count_clone = count_clone.clone();
-                    scope.spawn_on_scope(async move {
+                    scope.spawn_on_scope(DEFAULT_TASK_PRIORITY, async move {
                         inner_count_clone.fetch_add(1, Ordering::Release);
                         if thread::current().id() != spawner {
                             // NOTE: This check is using an atomic rather than simply panicking the
@@ -858,10 +871,10 @@ mod tests {
         let outputs: Vec<i32> = pool.scope(|scope| {
             for _ in 0..10 {
                 let count_clone = count.clone();
-                scope.spawn(async move {
+                scope.spawn(DEFAULT_TASK_PRIORITY, async move {
                     for _ in 0..10 {
                         let count_clone_clone = count_clone.clone();
-                        scope.spawn(async move {
+                        scope.spawn(DEFAULT_TASK_PRIORITY, async move {
                             if *foo != 42 {
                                 panic!("not 42!?!?")
                             } else {
@@ -900,11 +913,11 @@ mod tests {
                 inner_pool.scope(|scope| {
                     let spawner = thread::current().id();
                     let inner_count_clone = count_clone.clone();
-                    scope.spawn(async move {
+                    scope.spawn(DEFAULT_TASK_PRIORITY, async move {
                         inner_count_clone.fetch_add(1, Ordering::Release);
 
                         // spawning on the scope from another thread runs the futures on the scope's thread
-                        scope.spawn_on_scope(async move {
+                        scope.spawn_on_scope(DEFAULT_TASK_PRIORITY, async move {
                             inner_count_clone.fetch_add(1, Ordering::Release);
                             if thread::current().id() != spawner {
                                 // NOTE: This check is using an atomic rather than simply panicking the
@@ -929,9 +942,9 @@ mod tests {
         let count = Arc::new(AtomicI32::new(0));
 
         pool.scope(|scope| {
-            scope.spawn(async {
+            scope.spawn(DEFAULT_TASK_PRIORITY, async {
                 pool.scope(|scope| {
-                    scope.spawn(async {
+                    scope.spawn(DEFAULT_TASK_PRIORITY, async {
                         count.fetch_add(1, Ordering::Relaxed);
                     });
                 });

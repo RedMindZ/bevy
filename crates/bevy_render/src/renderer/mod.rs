@@ -2,7 +2,7 @@ mod graph_runner;
 mod render_device;
 
 use bevy_derive::{Deref, DerefMut};
-use bevy_tasks::ComputeTaskPool;
+use bevy_tasks::{ComputeTaskPool, DEFAULT_TASK_PRIORITY};
 use bevy_utils::tracing::{error, info, info_span, warn};
 pub use graph_runner::*;
 pub use render_device::*;
@@ -559,7 +559,7 @@ impl<'w> RenderContext<'w> {
                                 command_buffers
                                     .push((i, command_buffer_generation_task(render_device)));
                             } else {
-                                task_pool.spawn(async move {
+                                task_pool.spawn(DEFAULT_TASK_PRIORITY, async move {
                                     (i, command_buffer_generation_task(render_device))
                                 });
                             }

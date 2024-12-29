@@ -67,7 +67,10 @@ pub mod internal {
 
     use bevy_app::{App, First, Startup, Update};
     use bevy_ecs::system::Resource;
-    use bevy_tasks::{available_parallelism, block_on, poll_once, AsyncComputeTaskPool, Task};
+    use bevy_tasks::{
+        available_parallelism, block_on, poll_once, AsyncComputeTaskPool, Task,
+        DEFAULT_TASK_PRIORITY,
+    };
     use bevy_utils::tracing::info;
     use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 
@@ -76,6 +79,8 @@ pub mod internal {
     use super::{SystemInfo, SystemInformationDiagnosticsPlugin};
 
     const BYTES_TO_GIB: f64 = 1.0 / 1024.0 / 1024.0 / 1024.0;
+
+    const REFRESH_TASK_PRIORITY: isize = DEFAULT_TASK_PRIORITY;
 
     pub(super) fn setup_plugin(app: &mut App) {
         app.add_systems(Startup, setup_system)
@@ -128,7 +133,7 @@ pub mod internal {
             && tasks.tasks.len() * 2 < available_parallelism()
         {
             let sys = Arc::clone(sysinfo);
-            let task = thread_pool.spawn(async move {
+            let task = thread_pool.spawn(REFRESH_TASK_PRIORITY, async move {
                 let mut sys = sys.lock().unwrap();
 
                 sys.refresh_cpu_specifics(CpuRefreshKind::new().with_cpu_usage());

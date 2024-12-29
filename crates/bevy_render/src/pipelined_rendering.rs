@@ -1,12 +1,12 @@
 use async_channel::{Receiver, Sender};
 
-use bevy_app::{App, AppExit, AppLabel, Plugin, SubApp};
+use bevy_app::{App, AppLabel, Plugin, SubApp};
 use bevy_ecs::{
     schedule::MainThreadExecutor,
     system::Resource,
     world::{Mut, World},
 };
-use bevy_tasks::ComputeTaskPool;
+use bevy_tasks::{ComputeTaskPool, DEFAULT_TASK_PRIORITY};
 
 use crate::RenderApp;
 
@@ -150,7 +150,9 @@ impl Plugin for PipelinedRenderingPlugin {
                 // run a scope here to allow main world to use this thread while it's waiting for the render app
                 let sent_app = compute_task_pool
                     .scope(|s| {
-                        s.spawn(async { app_to_render_receiver.recv().await });
+                        s.spawn(DEFAULT_TASK_PRIORITY, async {
+                            app_to_render_receiver.recv().await
+                        });
                     })
                     .pop();
                 let Some(Ok(mut render_app)) = sent_app else {
@@ -187,7 +189,9 @@ fn renderer_extract(app_world: &mut World, _world: &mut World) {
                 // while we wait for the render world to be received.
                 ComputeTaskPool::get()
                     .scope_with_executor(true, Some(&*main_thread_executor.0), |s| {
-                        s.spawn(async { render_channels.recv().await });
+                        s.spawn(DEFAULT_TASK_PRIORITY, async {
+                            render_channels.recv().await
+                        });
                     })
                     .pop()
                     .unwrap()

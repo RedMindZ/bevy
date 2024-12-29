@@ -8,7 +8,11 @@ use std::{
     },
 };
 
-use bevy::{gltf::Gltf, prelude::*, tasks::AsyncComputeTaskPool};
+use bevy::{
+    gltf::Gltf,
+    prelude::*,
+    tasks::{AsyncComputeTaskPool, DEFAULT_TASK_PRIORITY},
+};
 use event_listener::Event;
 use futures_lite::Future;
 
@@ -157,7 +161,7 @@ fn setup_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     // await the `AssetBarrierFuture`.
     AsyncComputeTaskPool::get()
-        .spawn(async move {
+        .spawn(DEFAULT_TASK_PRIORITY, async move {
             future.await;
             // Notify via `AsyncLoadingState`
             loading_state.store(true, Ordering::Release);

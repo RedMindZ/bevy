@@ -5,6 +5,8 @@
     html_favicon_url = "https://bevyengine.org/assets/icon.png"
 )]
 
+mod executor;
+
 mod slice;
 pub use slice::{ParallelSlice, ParallelSliceMut};
 
@@ -50,10 +52,16 @@ pub mod prelude {
         iter::ParallelIterator,
         slice::{ParallelSlice, ParallelSliceMut},
         usages::{AsyncComputeTaskPool, ComputeTaskPool, IoTaskPool},
+        DEFAULT_TASK_PRIORITY,
     };
 }
 
 use std::num::NonZeroUsize;
+
+/// The default priority for a task.
+///
+/// Any task that runs on the [`ComputeTaskPool`] or the [`IoTaskPool`] should use this priority.
+pub const DEFAULT_TASK_PRIORITY: isize = 0;
 
 /// Gets the logical CPU core count available to the current process.
 ///

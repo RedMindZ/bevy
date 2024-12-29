@@ -1425,7 +1425,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
                 let queue = std::mem::take(queue);
                 let mut func = func.clone();
                 let init_accum = init_accum.clone();
-                scope.spawn(async move {
+                scope.spawn(bevy_tasks::DEFAULT_TASK_PRIORITY, async move {
                     #[cfg(feature = "trace")]
                     let _span = self.par_iter_span.enter();
                     let mut iter = self.iter_unchecked_manual(world, last_run, this_run);
@@ -1461,7 +1461,7 @@ impl<D: QueryData, F: QueryFilter> QueryState<D, F> {
                     let init_accum = init_accum.clone();
                     let len = batch_size.min(count - offset);
                     let batch = offset..offset + len;
-                    scope.spawn(async move {
+                    scope.spawn(bevy_tasks::DEFAULT_TASK_PRIORITY, async move {
                         #[cfg(feature = "trace")]
                         let _span = self.par_iter_span.enter();
                         let accum = init_accum();

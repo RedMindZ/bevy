@@ -18,7 +18,7 @@ use crate::{
     UntypedAssetLoadFailedEvent, UntypedHandle,
 };
 use bevy_ecs::prelude::*;
-use bevy_tasks::IoTaskPool;
+use bevy_tasks::{IoTaskPool, DEFAULT_TASK_PRIORITY};
 use bevy_utils::tracing::{error, info};
 use bevy_utils::{CowArc, HashSet};
 use crossbeam_channel::{Receiver, Sender};
@@ -378,7 +378,7 @@ impl AssetServer {
             let owned_handle = Some(handle.clone().untyped());
             let server = self.clone();
             IoTaskPool::get()
-                .spawn(async move {
+                .spawn(DEFAULT_TASK_PRIORITY, async move {
                     if let Err(err) = server.load_internal(owned_handle, path, false, None).await {
                         error!("{}", err);
                     }
@@ -430,7 +430,7 @@ impl AssetServer {
 
         let server = self.clone();
         IoTaskPool::get()
-            .spawn(async move {
+            .spawn(DEFAULT_TASK_PRIORITY, async move {
                 let path_clone = path.clone();
                 match server.load_untyped_async(path).await {
                     Ok(handle) => server.send_asset_event(InternalAssetEvent::Loaded {
@@ -641,7 +641,7 @@ impl AssetServer {
         let server = self.clone();
         let path = path.into().into_owned();
         IoTaskPool::get()
-            .spawn(async move {
+            .spawn(DEFAULT_TASK_PRIORITY, async move {
                 let mut reloaded = false;
 
                 let requests = server
@@ -732,7 +732,7 @@ impl AssetServer {
         let event_sender = self.data.asset_event_sender.clone();
 
         IoTaskPool::get()
-            .spawn(async move {
+            .spawn(DEFAULT_TASK_PRIORITY, async move {
                 match future.await {
                     Ok(asset) => {
                         let loaded_asset = LoadedAsset::new_with_dependencies(asset, None).into();
@@ -831,7 +831,7 @@ impl AssetServer {
         let path = path.into_owned();
         let server = self.clone();
         IoTaskPool::get()
-            .spawn(async move {
+            .spawn(DEFAULT_TASK_PRIORITY, async move {
                 let Ok(source) = server.get_source(path.source()) else {
                     error!(
                         "Failed to load {path}. AssetSource {:?} does not exist",

@@ -35,6 +35,9 @@ use crate::render_resource::resource_macros::*;
 render_resource_wrapper!(ErasedShaderModule, wgpu::ShaderModule);
 render_resource_wrapper!(ErasedPipelineLayout, wgpu::PipelineLayout);
 
+/// The priority of the task that creates pipelines on the [`bevy_tasks::AsyncComputeTaskPool`]
+pub const PIPELINE_CREATION_PRIORITY: isize = 64;
+
 /// A descriptor for a [`Pipeline`].
 ///
 /// Used to store an heterogenous collection of render and compute pipeline descriptors together.
@@ -951,7 +954,9 @@ fn create_pipeline_task(
     sync: bool,
 ) -> CachedPipelineState {
     if !sync {
-        return CachedPipelineState::Creating(bevy_tasks::AsyncComputeTaskPool::get().spawn(task));
+        return CachedPipelineState::Creating(
+            bevy_tasks::AsyncComputeTaskPool::get().spawn(PIPELINE_CREATION_PRIORITY, task),
+        );
     }
 
     match futures_lite::future::block_on(task) {

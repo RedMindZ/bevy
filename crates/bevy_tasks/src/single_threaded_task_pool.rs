@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::{cell::RefCell, future::Future, marker::PhantomData, mem, rc::Rc};
 
 thread_local! {
-    static LOCAL_EXECUTOR: async_executor::LocalExecutor<'static> = const { async_executor::LocalExecutor::new() };
+    static LOCAL_EXECUTOR: super::executor::LocalExecutor<'static> = const { super::executor::LocalExecutor::new() };
 }
 
 /// Used to create a [`TaskPool`].
@@ -113,9 +113,9 @@ impl TaskPool {
         // Any usages of the references passed into `Scope` must be accessed through
         // the transmuted reference for the rest of this function.
 
-        let executor = &async_executor::LocalExecutor::new();
+        let executor = &super::executor::LocalExecutor::new();
         // SAFETY: As above, all futures must complete in this function so we can change the lifetime
-        let executor: &'env async_executor::LocalExecutor<'env> =
+        let executor: &'env super::executor::LocalExecutor<'env> =
             unsafe { mem::transmute(executor) };
 
         let results: RefCell<Vec<Rc<RefCell<Option<T>>>>> = RefCell::new(Vec::new());
@@ -150,7 +150,7 @@ impl TaskPool {
     /// end-user.
     ///
     /// If the provided future is non-`Send`, [`TaskPool::spawn_local`] should be used instead.
-    pub fn spawn<T>(&self, future: impl Future<Output = T> + 'static) -> FakeTask
+    pub fn spawn<T>(&self, priority: isize, future: impl Future<Output = T> + 'static) -> FakeTask
     where
         T: 'static,
     {
@@ -162,7 +162,7 @@ impl TaskPool {
         #[cfg(not(target_arch = "wasm32"))]
         {
             LOCAL_EXECUTOR.with(|executor| {
-                let _task = executor.spawn(future);
+                let _task = executor.spawn(priority, future);
                 // Loop until all tasks are done
                 while executor.try_tick() {}
             });
@@ -172,11 +172,15 @@ impl TaskPool {
     }
 
     /// Spawns a static future on the JS event loop. This is exactly the same as [`TaskPool::spawn`].
-    pub fn spawn_local<T>(&self, future: impl Future<Output = T> + 'static) -> FakeTask
+    pub fn spawn_local<T>(
+        &self,
+        priority: isize,
+        future: impl Future<Output = T> + 'static,
+    ) -> FakeTask
     where
         T: 'static,
     {
-        self.spawn(future)
+        self.spawn(priority, future)
     }
 
     /// Runs a function with the local executor. Typically used to tick
@@ -192,7 +196,7 @@ impl TaskPool {
     /// ```
     pub fn with_local_executor<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&async_executor::LocalExecutor) -> R,
+        F: FnOnce(&super::executor::LocalExecutor) -> R,
     {
         LOCAL_EXECUTOR.with(f)
     }
@@ -214,7 +218,7 @@ impl FakeTask {
 /// For more information, see [`TaskPool::scope`].
 #[derive(Debug)]
 pub struct Scope<'scope, 'env: 'scope, T> {
-    executor: &'scope async_executor::LocalExecutor<'scope>,
+    executor: &'scope super::executor::LocalExecutor<'scope>,
     // Vector to gather results of all futures spawned during scope run
     results: &'env RefCell<Vec<Rc<RefCell<Option<T>>>>>,
 
@@ -231,8 +235,8 @@ impl<'scope, 'env, T: Send + 'env> Scope<'scope, 'env, T> {
     /// On the single threaded task pool, it just calls [`Scope::spawn_on_scope`].
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn<Fut: Future<Output = T> + 'scope>(&self, f: Fut) {
-        self.spawn_on_scope(f);
+    pub fn spawn<Fut: Future<Output = T> + 'scope>(&self, priority: isize, f: Fut) {
+        self.spawn_on_scope(priority, f);
     }
 
     /// Spawns a scoped future onto the executor. The scope *must* outlive
@@ -242,8 +246,8 @@ impl<'scope, 'env, T: Send + 'env> Scope<'scope, 'env, T> {
     /// On the single threaded task pool, it just calls [`Scope::spawn_on_scope`].
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn_on_external<Fut: Future<Output = T> + 'scope>(&self, f: Fut) {
-        self.spawn_on_scope(f);
+    pub fn spawn_on_external<Fut: Future<Output = T> + 'scope>(&self, priority: isize, f: Fut) {
+        self.spawn_on_scope(priority, f);
     }
 
     /// Spawns a scoped future that runs on the thread the scope called from. The
@@ -251,13 +255,13 @@ impl<'scope, 'env, T: Send + 'env> Scope<'scope, 'env, T> {
     /// returned as a part of [`TaskPool::scope`]'s return value.
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn_on_scope<Fut: Future<Output = T> + 'scope>(&self, f: Fut) {
+    pub fn spawn_on_scope<Fut: Future<Output = T> + 'scope>(&self, priority: isize, f: Fut) {
         let result = Rc::new(RefCell::new(None));
         self.results.borrow_mut().push(result.clone());
         let f = async move {
             let temp_result = f.await;
             result.borrow_mut().replace(temp_result);
         };
-        self.executor.spawn(f).detach();
+        self.executor.spawn(priority, f).detach();
     }
 }

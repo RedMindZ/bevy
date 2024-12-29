@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use bevy_tasks::{ComputeTaskPool, Scope, TaskPool, ThreadExecutor};
+use bevy_tasks::{ComputeTaskPool, Scope, TaskPool, ThreadExecutor, DEFAULT_TASK_PRIORITY};
 use bevy_utils::default;
 use bevy_utils::syncunsafecell::SyncUnsafeCell;
 #[cfg(feature = "trace")]
@@ -608,10 +608,10 @@ impl ExecutorState {
             .extend(&system_meta.archetype_component_access);
 
         if system_meta.is_send {
-            context.scope.spawn(task);
+            context.scope.spawn(DEFAULT_TASK_PRIORITY, task);
         } else {
             self.local_thread_running = true;
-            context.scope.spawn_on_external(task);
+            context.scope.spawn_on_external(DEFAULT_TASK_PRIORITY, task);
         }
     }
 
@@ -635,7 +635,7 @@ impl ExecutorState {
                 context.system_completed(system_index, res, system);
             };
 
-            context.scope.spawn_on_scope(task);
+            context.scope.spawn_on_scope(DEFAULT_TASK_PRIORITY, task);
         } else {
             let task = async move {
                 let res = std::panic::catch_unwind(AssertUnwindSafe(|| {
@@ -644,7 +644,7 @@ impl ExecutorState {
                 context.system_completed(system_index, res, system);
             };
 
-            context.scope.spawn_on_scope(task);
+            context.scope.spawn_on_scope(DEFAULT_TASK_PRIORITY, task);
         }
 
         self.exclusive_running = true;

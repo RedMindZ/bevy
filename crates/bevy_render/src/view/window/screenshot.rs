@@ -26,6 +26,8 @@ use crate::{
 
 use super::ExtractedWindows;
 
+const SCREENSHOT_COLLECTION_PRIORITY: isize = bevy_tasks::DEFAULT_TASK_PRIORITY;
+
 pub type ScreenshotFn = Box<dyn FnOnce(Image) + Send + Sync>;
 
 /// A resource which allows for taking screenshots of the window.
@@ -341,7 +343,9 @@ pub(crate) fn collect_screenshots(world: &mut World) {
                 ));
             };
 
-            AsyncComputeTaskPool::get().spawn(finish).detach();
+            AsyncComputeTaskPool::get()
+                .spawn(SCREENSHOT_COLLECTION_PRIORITY, finish)
+                .detach();
         }
     }
 }

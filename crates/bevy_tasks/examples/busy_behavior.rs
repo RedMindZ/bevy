@@ -2,7 +2,7 @@
 //! for 100ms. It's expected to take about a second to run (assuming the machine has >= 4 logical
 //! cores)
 
-use bevy_tasks::TaskPoolBuilder;
+use bevy_tasks::{TaskPoolBuilder, DEFAULT_TASK_PRIORITY};
 use web_time::{Duration, Instant};
 
 fn main() {
@@ -14,7 +14,7 @@ fn main() {
     let t0 = Instant::now();
     pool.scope(|s| {
         for i in 0..40 {
-            s.spawn(async move {
+            s.spawn(DEFAULT_TASK_PRIORITY, async move {
                 let now = Instant::now();
                 while Instant::now() - now < Duration::from_millis(100) {
                     // spin, simulating work being done

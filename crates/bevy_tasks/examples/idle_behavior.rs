@@ -2,7 +2,7 @@
 //! spinning. Other than the one thread, the system should remain idle, demonstrating good behavior
 //! for small workloads.
 
-use bevy_tasks::TaskPoolBuilder;
+use bevy_tasks::{TaskPoolBuilder, DEFAULT_TASK_PRIORITY};
 use web_time::{Duration, Instant};
 
 fn main() {
@@ -12,7 +12,7 @@ fn main() {
 
     pool.scope(|s| {
         for i in 0..1 {
-            s.spawn(async move {
+            s.spawn(DEFAULT_TASK_PRIORITY, async move {
                 println!("Blocking for 10 seconds");
                 let now = Instant::now();
                 while Instant::now() - now < Duration::from_millis(10000) {

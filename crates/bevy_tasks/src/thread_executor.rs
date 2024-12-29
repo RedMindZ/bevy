@@ -3,7 +3,8 @@ use std::{
     thread::{self, ThreadId},
 };
 
-use async_executor::{Executor, Task};
+use super::executor::Executor;
+use async_task::Task;
 use futures_lite::Future;
 
 /// An executor that can only be ticked on the thread it was instantiated on. But
@@ -65,9 +66,10 @@ impl<'task> ThreadExecutor<'task> {
     /// Spawn a task on the thread executor
     pub fn spawn<T: Send + 'task>(
         &self,
+        priority: isize,
         future: impl Future<Output = T> + Send + 'task,
     ) -> Task<T> {
-        self.executor.spawn(future)
+        self.executor.spawn(priority, future)
     }
 
     /// Gets the [`ThreadExecutorTicker`] for this executor.

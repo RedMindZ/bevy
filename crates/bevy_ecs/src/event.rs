@@ -983,7 +983,7 @@ impl<'a, E: Event> EventParIter<'a, E> {
             pool.scope(|scope| {
                 for batch in chunks.into_iter().flatten().chain(remainders) {
                     let func = func.clone();
-                    scope.spawn(async move {
+                    scope.spawn(bevy_tasks::DEFAULT_TASK_PRIORITY, async move {
                         for event in batch {
                             func(&event.event, event.event_id);
                         }

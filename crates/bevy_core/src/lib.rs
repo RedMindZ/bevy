@@ -104,7 +104,9 @@ pub fn update_frame_count(mut frame_count: ResMut<FrameCount>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy_tasks::prelude::{AsyncComputeTaskPool, ComputeTaskPool, IoTaskPool};
+    use bevy_tasks::prelude::{
+        AsyncComputeTaskPool, ComputeTaskPool, IoTaskPool, DEFAULT_TASK_PRIORITY,
+    };
 
     #[test]
     fn runs_spawn_local_tasks() {
@@ -113,21 +115,21 @@ mod tests {
 
         let (async_tx, async_rx) = crossbeam_channel::unbounded();
         AsyncComputeTaskPool::get()
-            .spawn_local(async move {
+            .spawn_local(DEFAULT_TASK_PRIORITY, async move {
                 async_tx.send(()).unwrap();
             })
             .detach();
 
         let (compute_tx, compute_rx) = crossbeam_channel::unbounded();
         ComputeTaskPool::get()
-            .spawn_local(async move {
+            .spawn_local(DEFAULT_TASK_PRIORITY, async move {
                 compute_tx.send(()).unwrap();
             })
             .detach();
 
         let (io_tx, io_rx) = crossbeam_channel::unbounded();
         IoTaskPool::get()
-            .spawn_local(async move {
+            .spawn_local(DEFAULT_TASK_PRIORITY, async move {
                 io_tx.send(()).unwrap();
             })
             .detach();

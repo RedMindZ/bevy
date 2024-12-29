@@ -38,7 +38,7 @@ use bevy_render::{
 };
 use bevy_scene::Scene;
 #[cfg(not(target_arch = "wasm32"))]
-use bevy_tasks::IoTaskPool;
+use bevy_tasks::{IoTaskPool, DEFAULT_TASK_PRIORITY};
 use bevy_transform::components::Transform;
 use bevy_utils::tracing::{error, info_span, warn};
 use bevy_utils::{HashMap, HashSet};
@@ -395,7 +395,7 @@ async fn load_gltf<'a, 'b, 'c>(
                     let parent_path = load_context.path().parent().unwrap();
                     let linear_textures = &linear_textures;
                     let buffer_data = &buffer_data;
-                    scope.spawn(async move {
+                    scope.spawn(DEFAULT_TASK_PRIORITY, async move {
                         load_image(
                             gltf_texture,
                             buffer_data,
