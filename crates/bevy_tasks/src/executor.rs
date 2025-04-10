@@ -12,7 +12,6 @@ use std::task::{Context, Poll, Waker};
 
 use async_task::{Builder, Runnable};
 use futures_lite::{future, prelude::*};
-use pin_project_lite::pin_project;
 use slab::Slab;
 
 use async_task::Task;
@@ -66,45 +65,45 @@ impl<'a> Executor<'a> {
         unsafe { self.spawn_inner(priority, future, &mut active) }
     }
 
-    /// Spawns many tasks onto the executor.
-    ///
-    /// As opposed to the [`spawn`] method, this locks the executor's inner task lock once and
-    /// spawns all of the tasks in one go. With large amounts of tasks this can improve
-    /// contention.
-    ///
-    /// For very large numbers of tasks the lock is occasionally dropped and re-acquired to
-    /// prevent runner thread starvation. It is assumed that the iterator provided does not
-    /// block; blocking iterators can lock up the internal mutex and therefore the entire
-    /// executor.
-    ///
-    /// [`spawn`]: Executor::spawn
-    pub fn spawn_many<T: Send + 'a, F: Future<Output = T> + Send + 'a>(
-        &self,
-        futures: impl IntoIterator<Item = (isize, F)>,
-        handles: &mut impl Extend<Task<F::Output>>,
-    ) {
-        let mut active = Some(self.state().active());
+    // /// Spawns many tasks onto the executor.
+    // ///
+    // /// As opposed to the [`spawn`] method, this locks the executor's inner task lock once and
+    // /// spawns all of the tasks in one go. With large amounts of tasks this can improve
+    // /// contention.
+    // ///
+    // /// For very large numbers of tasks the lock is occasionally dropped and re-acquired to
+    // /// prevent runner thread starvation. It is assumed that the iterator provided does not
+    // /// block; blocking iterators can lock up the internal mutex and therefore the entire
+    // /// executor.
+    // ///
+    // /// [`spawn`]: Executor::spawn
+    // pub fn spawn_many<T: Send + 'a, F: Future<Output = T> + Send + 'a>(
+    //     &self,
+    //     futures: impl IntoIterator<Item = (isize, F)>,
+    //     handles: &mut impl Extend<Task<F::Output>>,
+    // ) {
+    //     let mut active = Some(self.state().active());
 
-        // Convert the futures into tasks.
-        let tasks = futures
-            .into_iter()
-            .enumerate()
-            .map(move |(i, (priority, future))| {
-                // SAFETY: `T` and the future are `Send`.
-                let task = unsafe { self.spawn_inner(priority, future, active.as_mut().unwrap()) };
+    //     // Convert the futures into tasks.
+    //     let tasks = futures
+    //         .into_iter()
+    //         .enumerate()
+    //         .map(move |(i, (priority, future))| {
+    //             // SAFETY: `T` and the future are `Send`.
+    //             let task = unsafe { self.spawn_inner(priority, future, active.as_mut().unwrap()) };
 
-                // Yield the lock every once in a while to ease contention.
-                if i.wrapping_sub(1) % 500 == 0 {
-                    drop(active.take());
-                    active = Some(self.state().active());
-                }
+    //             // Yield the lock every once in a while to ease contention.
+    //             if i.wrapping_sub(1) % 500 == 0 {
+    //                 drop(active.take());
+    //                 active = Some(self.state().active());
+    //             }
 
-                task
-            });
+    //             task
+    //         });
 
-        // Push the tasks to the user's collection.
-        handles.extend(tasks);
-    }
+    //     // Push the tasks to the user's collection.
+    //     handles.extend(tasks);
+    // }
 
     /// Spawn a future while holding the inner lock.
     ///
@@ -778,7 +777,7 @@ impl<F: FnMut()> Drop for CallOnDrop<F> {
     }
 }
 
-pin_project! {
+pin_project_lite::pin_project! {
     /// A wrapper around a future, running a closure when dropped.
     struct AsyncCallOnDrop<Fut, Cleanup: FnMut()> {
         #[pin]

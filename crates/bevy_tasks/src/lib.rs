@@ -5,46 +5,81 @@
     html_favicon_url = "https://bevyengine.org/assets/icon.png"
 )]
 
+mod conditional_send {
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "wasm32")] {
+            /// Use [`ConditionalSend`] to mark an optional Send trait bound. Useful as on certain platforms (eg. Wasm),
+            /// futures aren't Send.
+            pub trait ConditionalSend {}
+            impl<T> ConditionalSend for T {}
+        } else {
+            /// Use [`ConditionalSend`] to mark an optional Send trait bound. Useful as on certain platforms (eg. Wasm),
+            /// futures aren't Send.
+            pub trait ConditionalSend: Send {}
+            impl<T: Send> ConditionalSend for T {}
+        }
+    }
+}
+
+pub use conditional_send::*;
+
+/// Use [`ConditionalSendFuture`] for a future with an optional Send trait bound, as on certain platforms (eg. Wasm),
+/// futures aren't Send.
+pub trait ConditionalSendFuture: Future + ConditionalSend {}
+impl<T: Future + ConditionalSend> ConditionalSendFuture for T {}
+
+/// An owned and dynamically typed Future used when you can't statically type your result or need to add some indirection.
+pub type BoxedFuture<'a, T> = core::pin::Pin<Box<dyn ConditionalSendFuture<Output = T> + 'a>>;
+
+pub mod futures;
+
 mod executor;
 
 mod slice;
 pub use slice::{ParallelSlice, ParallelSliceMut};
 
+#[cfg_attr(all(target_arch = "wasm32", feature = "web"), path = "wasm_task.rs")]
 mod task;
+
 pub use task::Task;
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "multi_threaded"))]
-mod task_pool;
-#[cfg(all(not(target_arch = "wasm32"), feature = "multi_threaded"))]
-pub use task_pool::{Scope, TaskPool, TaskPoolBuilder};
+cfg_if::cfg_if! {
+    if #[cfg(all(not(target_arch = "wasm32"), feature = "multi_threaded"))] {
+        mod task_pool;
+        mod thread_executor;
 
-#[cfg(any(target_arch = "wasm32", not(feature = "multi_threaded")))]
-mod single_threaded_task_pool;
-#[cfg(any(target_arch = "wasm32", not(feature = "multi_threaded")))]
-pub use single_threaded_task_pool::{FakeTask, Scope, TaskPool, TaskPoolBuilder, ThreadExecutor};
+        pub use task_pool::{Scope, TaskPool, TaskPoolBuilder};
+        pub use thread_executor::{ThreadExecutor, ThreadExecutorTicker};
+    } else if #[cfg(any(target_arch = "wasm32", not(feature = "multi_threaded")))] {
+        mod single_threaded_task_pool;
+
+        pub use single_threaded_task_pool::{Scope, TaskPool, TaskPoolBuilder, ThreadExecutor};
+    }
+}
 
 mod usages;
-#[cfg(not(target_arch = "wasm32"))]
-pub use usages::tick_global_task_pools_on_main_thread;
+pub use futures_lite::future::poll_once;
 pub use usages::{AsyncComputeTaskPool, ComputeTaskPool, IoTaskPool};
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "multi_threaded"))]
-mod thread_executor;
-#[cfg(all(not(target_arch = "wasm32"), feature = "multi_threaded"))]
-pub use thread_executor::{ThreadExecutor, ThreadExecutorTicker};
+#[cfg(not(all(target_arch = "wasm32", feature = "web")))]
+pub use usages::tick_global_task_pools_on_main_thread;
 
-#[cfg(feature = "async-io")]
-pub use async_io::block_on;
-#[cfg(not(feature = "async-io"))]
-pub use futures_lite::future::block_on;
-pub use futures_lite::future::poll_once;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "async-io")] {
+        pub use async_io::block_on;
+    } else {
+        pub use futures_lite::future::block_on;
+    }
+}
 
 mod iter;
 pub use iter::ParallelIterator;
 
 pub use futures_lite;
 
-#[allow(missing_docs)]
+/// The tasks prelude.
+///
+/// This includes the most common types in this crate, re-exported for your convenience.
 pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
@@ -56,7 +91,7 @@ pub mod prelude {
     };
 }
 
-use std::num::NonZeroUsize;
+use core::num::NonZero;
 
 /// The default priority for a task.
 ///
@@ -71,6 +106,6 @@ pub const DEFAULT_TASK_PRIORITY: isize = 0;
 /// This will always return at least 1.
 pub fn available_parallelism() -> usize {
     std::thread::available_parallelism()
-        .map(NonZeroUsize::get)
+        .map(NonZero::<usize>::get)
         .unwrap_or(1)
 }

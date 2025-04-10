@@ -1,9 +1,7 @@
-use std::{
-    marker::PhantomData,
-    thread::{self, ThreadId},
-};
+use core::marker::PhantomData;
+use std::thread::{self, ThreadId};
 
-use super::executor::Executor;
+use crate::executor::Executor;
 use async_task::Task;
 use futures_lite::Future;
 
@@ -88,7 +86,7 @@ impl<'task> ThreadExecutor<'task> {
 
     /// Returns true if `self` and `other`'s executor is same
     pub fn is_same(&self, other: &Self) -> bool {
-        std::ptr::eq(self, other)
+        core::ptr::eq(self, other)
     }
 }
 

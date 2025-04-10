@@ -1,7 +1,9 @@
 use crate::{
-    Alpha, ColorToComponents, Gray, Hue, Hwba, Lcha, LinearRgba, Mix, Srgba, StandardColor, Xyza,
+    Alpha, ColorToComponents, Gray, Hue, Hwba, Lcha, LinearRgba, Mix, Saturation, Srgba,
+    StandardColor, Xyza,
 };
 use bevy_math::{Vec3, Vec4};
+#[cfg(feature = "bevy_reflect")]
 use bevy_reflect::prelude::*;
 
 /// Color in Hue-Saturation-Value (HSV) color space with alpha.
@@ -10,11 +12,15 @@ use bevy_reflect::prelude::*;
 /// <div>
 #[doc = include_str!("../docs/diagrams/model_graph.svg")]
 /// </div>
-#[derive(Debug, Clone, Copy, PartialEq, Reflect)]
-#[reflect(PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(
-    feature = "serialize",
-    derive(serde::Serialize, serde::Deserialize),
+    feature = "bevy_reflect",
+    derive(Reflect),
+    reflect(Clone, PartialEq, Default)
+)]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    all(feature = "serialize", feature = "bevy_reflect"),
     reflect(Serialize, Deserialize)
 )]
 pub struct Hsva {
@@ -128,6 +134,26 @@ impl Hue for Hsva {
     }
 }
 
+impl Saturation for Hsva {
+    #[inline]
+    fn with_saturation(&self, saturation: f32) -> Self {
+        Self {
+            saturation,
+            ..*self
+        }
+    }
+
+    #[inline]
+    fn saturation(&self) -> f32 {
+        self.saturation
+    }
+
+    #[inline]
+    fn set_saturation(&mut self, saturation: f32) {
+        self.saturation = saturation;
+    }
+}
+
 impl From<Hsva> for Hwba {
     fn from(
         Hsva {
@@ -156,7 +182,11 @@ impl From<Hwba> for Hsva {
     ) -> Self {
         // Based on https://en.wikipedia.org/wiki/HWB_color_model#Conversion
         let value = 1. - blackness;
-        let saturation = 1. - (whiteness / value);
+        let saturation = if value != 0. {
+            1. - (whiteness / value)
+        } else {
+            0.
+        };
 
         Hsva::new(hue, saturation, value, alpha)
     }

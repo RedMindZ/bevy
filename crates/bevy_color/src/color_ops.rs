@@ -1,4 +1,4 @@
-use bevy_math::{Vec3, Vec4};
+use bevy_math::{ops, Vec3, Vec4};
 
 /// Methods for changing the luminance of a color. Note that these methods are not
 /// guaranteed to produce consistent results across color spaces,
@@ -90,9 +90,24 @@ pub trait Hue: Sized {
 
     /// Return a new version of this color with the hue channel rotated by the given degrees.
     fn rotate_hue(&self, degrees: f32) -> Self {
-        let rotated_hue = (self.hue() + degrees).rem_euclid(360.);
+        let rotated_hue = ops::rem_euclid(self.hue() + degrees, 360.);
         self.with_hue(rotated_hue)
     }
+}
+
+/// Trait for manipulating the saturation of a color.
+///
+/// When working with color spaces that do not have native saturation components
+/// the operations are performed in [`crate::Hsla`].
+pub trait Saturation: Sized {
+    /// Return a new version of this color with the saturation channel set to the given value.
+    fn with_saturation(&self, saturation: f32) -> Self;
+
+    /// Return the saturation of this color [0.0, 1.0].
+    fn saturation(&self) -> f32;
+
+    /// Sets the saturation of this color.
+    fn set_saturation(&mut self, saturation: f32);
 }
 
 /// Trait with methods for converting colors to non-color types
@@ -131,13 +146,13 @@ pub trait ColorToPacked {
 /// takes the shortest path around the color wheel, and that the result is always between
 /// 0 and 360.
 pub(crate) fn lerp_hue(a: f32, b: f32, t: f32) -> f32 {
-    let diff = (b - a + 180.0).rem_euclid(360.) - 180.;
-    (a + diff * t).rem_euclid(360.0)
+    let diff = ops::rem_euclid(b - a + 180.0, 360.) - 180.;
+    ops::rem_euclid(a + diff * t, 360.)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fmt::Debug;
+    use core::fmt::Debug;
 
     use super::*;
     use crate::{testing::assert_approx_eq, Hsla};
@@ -183,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_gray() {
-        verify_gray::<crate::Hsla>();
+        verify_gray::<Hsla>();
         verify_gray::<crate::Hsva>();
         verify_gray::<crate::Hwba>();
         verify_gray::<crate::Laba>();

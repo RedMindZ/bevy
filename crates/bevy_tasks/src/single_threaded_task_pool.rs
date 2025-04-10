@@ -1,9 +1,13 @@
-use std::sync::Arc;
-use std::{cell::RefCell, future::Future, marker::PhantomData, mem, rc::Rc};
+use crate::{executor::LocalExecutor, Task};
+use bevy_platform_support::sync::Arc;
+use core::{cell::RefCell, future::Future, marker::PhantomData, mem};
+use std::{string::String, thread_local, vec::Vec};
 
 thread_local! {
-    static LOCAL_EXECUTOR: super::executor::LocalExecutor<'static> = const { super::executor::LocalExecutor::new() };
+    static LOCAL_EXECUTOR: LocalExecutor<'static> = const { LocalExecutor::new() };
 }
+
+type ScopeResult<T> = std::rc::Rc<RefCell<Option<T>>>;
 
 /// Used to create a [`TaskPool`].
 #[derive(Debug, Default, Clone)]
@@ -44,6 +48,16 @@ impl TaskPoolBuilder {
         self
     }
 
+    /// No op on the single threaded task pool
+    pub fn on_thread_spawn(self, _f: impl Fn() + Send + Sync + 'static) -> Self {
+        self
+    }
+
+    /// No op on the single threaded task pool
+    pub fn on_thread_destroy(self, _f: impl Fn() + Send + Sync + 'static) -> Self {
+        self
+    }
+
     /// Creates a new [`TaskPool`]
     pub fn build(self) -> TaskPool {
         TaskPool::new_internal()
@@ -66,7 +80,6 @@ impl TaskPool {
         TaskPoolBuilder::new().build()
     }
 
-    #[allow(unused_variables)]
     fn new_internal() -> Self {
         Self {}
     }
@@ -94,7 +107,7 @@ impl TaskPool {
     /// to spawn tasks. This function will await the completion of all tasks before returning.
     ///
     /// This is similar to `rayon::scope` and `crossbeam::scope`
-    #[allow(unsafe_code)]
+    #[expect(unsafe_code, reason = "Required to transmute lifetimes.")]
     pub fn scope_with_executor<'env, F, T>(
         &self,
         _tick_task_pool_executor: bool,
@@ -113,15 +126,13 @@ impl TaskPool {
         // Any usages of the references passed into `Scope` must be accessed through
         // the transmuted reference for the rest of this function.
 
-        let executor = &super::executor::LocalExecutor::new();
+        let executor = &LocalExecutor::new();
         // SAFETY: As above, all futures must complete in this function so we can change the lifetime
-        let executor: &'env super::executor::LocalExecutor<'env> =
-            unsafe { mem::transmute(executor) };
+        let executor: &'env LocalExecutor<'env> = unsafe { mem::transmute(executor) };
 
-        let results: RefCell<Vec<Rc<RefCell<Option<T>>>>> = RefCell::new(Vec::new());
+        let results: RefCell<Vec<ScopeResult<T>>> = RefCell::new(Vec::new());
         // SAFETY: As above, all futures must complete in this function so we can change the lifetime
-        let results: &'env RefCell<Vec<Rc<RefCell<Option<T>>>>> =
-            unsafe { mem::transmute(&results) };
+        let results: &'env RefCell<Vec<ScopeResult<T>>> = unsafe { mem::transmute(&results) };
 
         let mut scope = Scope {
             executor,
@@ -145,40 +156,43 @@ impl TaskPool {
             .collect()
     }
 
-    /// Spawns a static future onto the thread pool. The returned Task is a future. It can also be
-    /// cancelled and "detached" allowing it to continue running without having to be polled by the
+    /// Spawns a static future onto the thread pool. The returned Task is a future, which can be polled
+    /// to retrieve the output of the original future. Dropping the task will attempt to cancel it.
+    /// It can also be "detached", allowing it to continue running without having to be polled by the
     /// end-user.
     ///
     /// If the provided future is non-`Send`, [`TaskPool::spawn_local`] should be used instead.
-    pub fn spawn<T>(&self, priority: isize, future: impl Future<Output = T> + 'static) -> FakeTask
+    pub fn spawn<T>(
+        &self,
+        priority: isize,
+        future: impl Future<Output = T> + 'static + MaybeSend + MaybeSync,
+    ) -> Task<T>
     where
-        T: 'static,
+        T: 'static + MaybeSend + MaybeSync,
     {
-        #[cfg(target_arch = "wasm32")]
-        wasm_bindgen_futures::spawn_local(async move {
-            future.await;
-        });
+        cfg_if::cfg_if! {
+            if #[cfg(all(target_arch = "wasm32", feature = "web"))] {
+                Task::wrap_future(future)
+            } else {
+                LOCAL_EXECUTOR.with(|executor| {
+                    let task = executor.spawn(priority, future);
+                    // Loop until all tasks are done
+                    while executor.try_tick() {}
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            LOCAL_EXECUTOR.with(|executor| {
-                let _task = executor.spawn(priority, future);
-                // Loop until all tasks are done
-                while executor.try_tick() {}
-            });
+                    Task::new(task)
+                })
+            }
         }
-
-        FakeTask
     }
 
     /// Spawns a static future on the JS event loop. This is exactly the same as [`TaskPool::spawn`].
     pub fn spawn_local<T>(
         &self,
         priority: isize,
-        future: impl Future<Output = T> + 'static,
-    ) -> FakeTask
+        future: impl Future<Output = T> + 'static + MaybeSend + MaybeSync,
+    ) -> Task<T>
     where
-        T: 'static,
+        T: 'static + MaybeSend + MaybeSync,
     {
         self.spawn(priority, future)
     }
@@ -196,21 +210,10 @@ impl TaskPool {
     /// ```
     pub fn with_local_executor<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&super::executor::LocalExecutor) -> R,
+        F: FnOnce(&LocalExecutor) -> R,
     {
         LOCAL_EXECUTOR.with(f)
     }
-}
-
-/// An empty task used in single-threaded contexts.
-///
-/// This does nothing and is therefore safe, and recommended, to ignore.
-#[derive(Debug)]
-pub struct FakeTask;
-
-impl FakeTask {
-    /// No op on the single threaded task pool
-    pub fn detach(self) {}
 }
 
 /// A `TaskPool` scope for running one or more non-`'static` futures.
@@ -218,9 +221,9 @@ impl FakeTask {
 /// For more information, see [`TaskPool::scope`].
 #[derive(Debug)]
 pub struct Scope<'scope, 'env: 'scope, T> {
-    executor: &'scope super::executor::LocalExecutor<'scope>,
+    executor: &'scope LocalExecutor<'scope>,
     // Vector to gather results of all futures spawned during scope run
-    results: &'env RefCell<Vec<Rc<RefCell<Option<T>>>>>,
+    results: &'env RefCell<Vec<ScopeResult<T>>>,
 
     // make `Scope` invariant over 'scope and 'env
     scope: PhantomData<&'scope mut &'scope ()>,
@@ -235,7 +238,7 @@ impl<'scope, 'env, T: Send + 'env> Scope<'scope, 'env, T> {
     /// On the single threaded task pool, it just calls [`Scope::spawn_on_scope`].
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn<Fut: Future<Output = T> + 'scope>(&self, priority: isize, f: Fut) {
+    pub fn spawn<Fut: Future<Output = T> + 'scope + MaybeSend>(&self, priority: isize, f: Fut) {
         self.spawn_on_scope(priority, f);
     }
 
@@ -246,7 +249,11 @@ impl<'scope, 'env, T: Send + 'env> Scope<'scope, 'env, T> {
     /// On the single threaded task pool, it just calls [`Scope::spawn_on_scope`].
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn_on_external<Fut: Future<Output = T> + 'scope>(&self, priority: isize, f: Fut) {
+    pub fn spawn_on_external<Fut: Future<Output = T> + 'scope + MaybeSend>(
+        &self,
+        priority: isize,
+        f: Fut,
+    ) {
         self.spawn_on_scope(priority, f);
     }
 
@@ -255,13 +262,28 @@ impl<'scope, 'env, T: Send + 'env> Scope<'scope, 'env, T> {
     /// returned as a part of [`TaskPool::scope`]'s return value.
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn_on_scope<Fut: Future<Output = T> + 'scope>(&self, priority: isize, f: Fut) {
-        let result = Rc::new(RefCell::new(None));
+    pub fn spawn_on_scope<Fut: Future<Output = T> + 'scope + MaybeSend>(
+        &self,
+        priority: isize,
+        f: Fut,
+    ) {
+        let result = ScopeResult::<T>::default();
         self.results.borrow_mut().push(result.clone());
         let f = async move {
             let temp_result = f.await;
+
             result.borrow_mut().replace(temp_result);
         };
         self.executor.spawn(priority, f).detach();
     }
 }
+
+mod send_sync_bounds {
+    pub trait MaybeSend {}
+    impl<T> MaybeSend for T {}
+
+    pub trait MaybeSync {}
+    impl<T> MaybeSync for T {}
+}
+
+use send_sync_bounds::{MaybeSend, MaybeSync};

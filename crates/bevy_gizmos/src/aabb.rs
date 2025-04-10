@@ -1,7 +1,5 @@
 //! A module adding debug visualization of [`Aabb`]s.
 
-use crate as bevy_gizmos;
-
 use bevy_app::{Plugin, PostUpdate};
 use bevy_color::{Color, Oklcha};
 use bevy_ecs::{
@@ -9,7 +7,7 @@ use bevy_ecs::{
     entity::Entity,
     query::Without,
     reflect::ReflectComponent,
-    schedule::IntoSystemConfigs,
+    schedule::IntoScheduleConfigs,
     system::{Query, Res},
 };
 use bevy_reflect::{std_traits::ReflectDefault, Reflect};
@@ -40,12 +38,14 @@ impl Plugin for AabbGizmoPlugin {
                         config.config::<AabbGizmoConfigGroup>().1.draw_all
                     }),
                 )
+                    .after(bevy_render::view::VisibilitySystems::CalculateBounds)
                     .after(TransformSystem::TransformPropagate),
             );
     }
 }
 /// The [`GizmoConfigGroup`] used for debug visualizations of [`Aabb`] components on entities
 #[derive(Clone, Default, Reflect, GizmoConfigGroup)]
+#[reflect(Clone, Default)]
 pub struct AabbGizmoConfigGroup {
     /// Draws all bounding boxes in the scene when set to `true`.
     ///
@@ -63,7 +63,7 @@ pub struct AabbGizmoConfigGroup {
 
 /// Add this [`Component`] to an entity to draw its [`Aabb`] component.
 #[derive(Component, Reflect, Default, Debug)]
-#[reflect(Component, Default)]
+#[reflect(Component, Default, Debug)]
 pub struct ShowAabbGizmo {
     /// The color of the box.
     ///

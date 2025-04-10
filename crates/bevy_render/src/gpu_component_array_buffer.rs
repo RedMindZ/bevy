@@ -6,10 +6,10 @@ use crate::{
 use bevy_app::{App, Plugin};
 use bevy_ecs::{
     prelude::{Component, Entity},
-    schedule::IntoSystemConfigs,
+    schedule::IntoScheduleConfigs,
     system::{Commands, Query, Res, ResMut},
 };
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// This plugin prepares the components of the corresponding type for the GPU
 /// by storing them in a [`GpuArrayBuffer`].
@@ -53,7 +53,7 @@ fn prepare_gpu_component_array_buffers<C: Component + GpuArrayBufferable>(
         .iter()
         .map(|(entity, component)| (entity, gpu_array_buffer.push(component.clone())))
         .collect::<Vec<_>>();
-    commands.insert_or_spawn_batch(entities);
+    commands.try_insert_batch(entities);
 
     gpu_array_buffer.write_buffer(&render_device, &render_queue);
 }

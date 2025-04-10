@@ -5,13 +5,18 @@
     html_logo_url = "https://bevyengine.org/assets/icon.png",
     html_favicon_url = "https://bevyengine.org/assets/icon.png"
 )]
+#![no_std]
+
+#[cfg(feature = "std")]
+extern crate std;
+
+extern crate alloc;
 
 /// Common run conditions
 pub mod common_conditions;
 mod fixed;
 mod real;
 mod stopwatch;
-#[allow(clippy::module_inception)]
 mod time;
 mod timer;
 mod virt;
@@ -23,26 +28,35 @@ pub use time::*;
 pub use timer::*;
 pub use virt::*;
 
+/// The time prelude.
+///
+/// This includes the most common types in this crate, re-exported for your convenience.
 pub mod prelude {
-    //! The Bevy Time Prelude.
     #[doc(hidden)]
     pub use crate::{Fixed, Real, Time, Timer, TimerMode, Virtual};
 }
 
 use bevy_app::{prelude::*, RunFixedMainLoop};
-// use bevy_ecs::event::{signal_event_update_system, EventRegistry, ShouldUpdateEvents};
-use bevy_ecs::prelude::*;
-use bevy_utils::{Duration, Instant};
+use bevy_ecs::{
+    // event::{event_update_system, signal_event_update_system, EventRegistry, ShouldUpdateEvents},
+    prelude::*,
+};
+use bevy_platform_support::time::Instant;
+use core::time::Duration;
+
+#[cfg(feature = "std")]
 pub use crossbeam_channel::TrySendError;
+
+// #[cfg(feature = "std")]
 // use crossbeam_channel::{Receiver, Sender};
 
 /// Adds time functionality to Apps.
 #[derive(Default)]
 pub struct TimePlugin;
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash, SystemSet)]
 /// Updates the elapsed time. Any system that interacts with [`Time`] component should run after
 /// this.
+#[derive(Debug, PartialEq, Eq, Clone, Hash, SystemSet)]
 pub struct TimeSystem;
 
 impl Plugin for TimePlugin {
@@ -62,8 +76,14 @@ impl Plugin for TimePlugin {
                 .register_type::<Timer>();
         }
 
-        app.add_systems(First, time_system.in_set(TimeSystem))
-            .add_systems(RunFixedMainLoop, run_fixed_main_schedule);
+        app.add_systems(
+            First,
+            time_system.in_set(TimeSystem), // .ambiguous_with(event_update_system),
+        )
+        .add_systems(
+            RunFixedMainLoop,
+            run_fixed_main_schedule.in_set(RunFixedMainLoopSystem::FixedMainLoop),
+        );
 
         // // Ensure the events are not dropped until `FixedMain` systems can observe them
         // app.add_systems(FixedPostUpdate, signal_event_update_system);
@@ -79,8 +99,9 @@ impl Plugin for TimePlugin {
 /// networking or similar, you may prefer to set the next [`Time`] value manually.
 #[derive(Resource, Default)]
 pub enum TimeUpdateStrategy {
-    /// [`Time`] will be automatically updated each frame using an [`Instant`] sent from the render world via a [`TimeSender`].
+    /// [`Time`] will be automatically updated each frame using an [`Instant`] sent from the render world.
     /// If nothing is sent, the system clock will be used instead.
+    #[cfg_attr(feature = "std", doc = "See [`TimeSender`] for more details.")]
     #[default]
     Automatic,
     /// [`Time`] will be updated to the specified [`Instant`] value each frame.
@@ -93,14 +114,17 @@ pub enum TimeUpdateStrategy {
 }
 
 // /// Channel resource used to receive time from the render world.
+// #[cfg(feature = "std")]
 // #[derive(Resource)]
 // pub struct TimeReceiver(pub Receiver<Instant>);
 
 // /// Channel resource used to send time from the render world.
+// #[cfg(feature = "std")]
 // #[derive(Resource)]
 // pub struct TimeSender(pub Sender<Instant>);
 
 // /// Creates channels used for sending time between the render world and the main world.
+// #[cfg(feature = "std")]
 // pub fn create_time_channels() -> (TimeSender, TimeReceiver) {
 //     // bound the channel to 2 since when pipelined the render phase can finish before
 //     // the time system runs.
@@ -115,28 +139,27 @@ pub fn time_system(
     mut virtual_time: ResMut<Time<Virtual>>,
     mut time: ResMut<Time>,
     update_strategy: Res<TimeUpdateStrategy>,
-    // time_recv: Option<Res<TimeReceiver>>,
-    // mut has_received_time: Local<bool>,
+    // #[cfg(feature = "std")] time_recv: Option<Res<TimeReceiver>>,
+    // #[cfg(feature = "std")] mut has_received_time: Local<bool>,
 ) {
-    // let new_time = if let Some(time_recv) = time_recv {
-    //     // TODO: Figure out how to handle this when using pipelined rendering.
-    //     if let Ok(new_time) = time_recv.0.try_recv() {
+    // #[cfg(feature = "std")]
+    // // TODO: Figure out how to handle this when using pipelined rendering.
+    // let sent_time = match time_recv.map(|res| res.0.try_recv()) {
+    //     Some(Ok(new_time)) => {
     //         *has_received_time = true;
-    //         new_time
-    //     } else {
-    //         if *has_received_time {
-    //             warn!("time_system did not receive the time from the render world! Calculations depending on the time may be incorrect.");
-    //         }
-    //         Instant::now()
+    //         Some(new_time)
     //     }
-    // } else {
-    //     Instant::now()
+    //     Some(Err(_)) => {
+    //         if *has_received_time {
+    //             log::warn!("time_system did not receive the time from the render world! Calculations depending on the time may be incorrect.");
+    //         }
+    //         None
+    //     }
+    //     None => None,
     // };
 
-    let new_time = Instant::now();
-
     match update_strategy.as_ref() {
-        TimeUpdateStrategy::Automatic => real_time.update_with_instant(new_time),
+        TimeUpdateStrategy::Automatic => real_time.update_with_instant(Instant::now()),
         TimeUpdateStrategy::ManualInstant(instant) => real_time.update_with_instant(*instant),
         TimeUpdateStrategy::ManualDuration(duration) => real_time.update_with_duration(*duration),
     }
@@ -145,15 +168,18 @@ pub fn time_system(
 }
 
 #[cfg(test)]
+#[expect(clippy::print_stdout, reason = "Allowed in tests.")]
 mod tests {
     use crate::{Fixed, Time, TimePlugin, TimeUpdateStrategy, Virtual};
     use bevy_app::{App, FixedUpdate, Startup, Update};
     use bevy_ecs::{
         event::{Event, EventReader, EventRegistry, EventWriter, Events, ShouldUpdateEvents},
-        system::{Local, Res, ResMut, Resource},
+        resource::Resource,
+        system::{Local, Res, ResMut},
     };
-    use bevy_utils::Duration;
-    use std::error::Error;
+    use core::error::Error;
+    use core::time::Duration;
+    use std::println;
 
     #[derive(Event)]
     struct TestEvent<T: Default> {
@@ -262,13 +288,13 @@ mod tests {
             .add_event::<TestEvent<i32>>()
             .add_event::<TestEvent<()>>()
             .add_systems(Startup, move |mut ev2: EventWriter<TestEvent<()>>| {
-                ev2.send(TestEvent {
+                ev2.write(TestEvent {
                     sender: tx2.clone(),
                 });
             })
             .add_systems(Update, move |mut ev1: EventWriter<TestEvent<i32>>| {
                 // Keep adding events so this event type is processed every update
-                ev1.send(TestEvent {
+                ev1.write(TestEvent {
                     sender: tx1.clone(),
                 });
             })

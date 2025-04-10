@@ -2,10 +2,13 @@ use crate::MainWorld;
 use bevy_ecs::{
     component::Tick,
     prelude::*,
-    system::{ReadOnlySystemParam, SystemMeta, SystemParam, SystemParamItem, SystemState},
+    system::{
+        ReadOnlySystemParam, SystemMeta, SystemParam, SystemParamItem, SystemParamValidationError,
+        SystemState,
+    },
     world::unsafe_world_cell::UnsafeWorldCell,
 };
-use std::ops::{Deref, DerefMut};
+use core::ops::{Deref, DerefMut};
 
 /// A helper for accessing [`MainWorld`] content using a system parameter.
 ///
@@ -30,11 +33,13 @@ use std::ops::{Deref, DerefMut};
 /// ```
 /// use bevy_ecs::prelude::*;
 /// use bevy_render::Extract;
+/// use bevy_render::sync_world::RenderEntity;
 /// # #[derive(Component)]
+/// // Do make sure to sync the cloud entities before extracting them.
 /// # struct Cloud;
-/// fn extract_clouds(mut commands: Commands, clouds: Extract<Query<Entity, With<Cloud>>>) {
+/// fn extract_clouds(mut commands: Commands, clouds: Extract<Query<RenderEntity, With<Cloud>>>) {
 ///     for cloud in &clouds {
-///         commands.get_or_spawn(cloud).insert(Cloud);
+///         commands.entity(cloud).insert(Cloud);
 ///     }
 /// }
 /// ```
@@ -74,6 +79,31 @@ where
         }
     }
 
+    #[inline]
+    unsafe fn validate_param(
+        state: &Self::State,
+        _system_meta: &SystemMeta,
+        world: UnsafeWorldCell,
+    ) -> Result<(), SystemParamValidationError> {
+        // SAFETY: Read-only access to world data registered in `init_state`.
+        let result = unsafe { world.get_resource_by_id(state.main_world_state) };
+        let Some(main_world) = result else {
+            return Err(SystemParamValidationError::invalid::<Self>(
+                "`MainWorld` resource does not exist",
+            ));
+        };
+        // SAFETY: Type is guaranteed by `SystemState`.
+        let main_world: &World = unsafe { main_world.deref() };
+        // SAFETY: We provide the main world on which this system state was initialized on.
+        unsafe {
+            SystemState::<P>::validate_param(
+                &state.state,
+                main_world.as_unsafe_world_cell_readonly(),
+            )
+        }
+    }
+
+    #[inline]
     unsafe fn get_param<'w, 's>(
         state: &'s mut Self::State,
         system_meta: &SystemMeta,

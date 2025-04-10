@@ -12,8 +12,8 @@ use bevy_ecs::prelude::*;
 /// [`WindowPlugin`]: crate::WindowPlugin
 pub fn exit_on_all_closed(mut app_exit_events: EventWriter<AppExit>, windows: Query<&Window>) {
     if windows.is_empty() {
-        bevy_utils::tracing::info!("No windows are open, exiting");
-        app_exit_events.send(AppExit::Success);
+        log::info!("No windows are open, exiting");
+        app_exit_events.write(AppExit::Success);
     }
 }
 
@@ -27,8 +27,8 @@ pub fn exit_on_primary_closed(
     windows: Query<(), (With<Window>, With<PrimaryWindow>)>,
 ) {
     if windows.is_empty() {
-        bevy_utils::tracing::info!("Primary window was closed, exiting");
-        app_exit_events.send(AppExit::Success);
+        log::info!("Primary window was closed, exiting");
+        app_exit_events.write(AppExit::Success);
     }
 }
 
@@ -51,9 +51,12 @@ pub fn close_when_requested(
     }
     // Mark the window as closing so we can despawn it on the next frame
     for event in closed.read() {
-        commands.entity(event.window).insert(ClosingWindow);
+        // When spamming the window close button on windows (other platforms too probably)
+        // we may receive a `WindowCloseRequested` for a window we've just despawned in the above
+        // loop.
+        commands.entity(event.window).try_insert(ClosingWindow);
 
         // Make sure there will be another frame to close the window
-        redraw.send(RequestRedraw);
+        redraw.write(RequestRedraw);
     }
 }
