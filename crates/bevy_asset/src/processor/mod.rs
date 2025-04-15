@@ -60,11 +60,6 @@ use alloc::{borrow::ToOwned, boxed::Box, collections::VecDeque, sync::Arc, vec, 
 use bevy_ecs::prelude::*;
 use bevy_platform_support::collections::{HashMap, HashSet};
 use bevy_tasks::{IoTaskPool, DEFAULT_TASK_PRIORITY};
-#[cfg(feature = "trace")]
-use bevy_utils::{
-    tracing::{info_span, instrument::Instrument},
-    ConditionalSendFuture,
-};
 use futures_io::ErrorKind;
 use futures_lite::{AsyncReadExt, AsyncWriteExt, StreamExt};
 use parking_lot::RwLock;

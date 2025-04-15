@@ -3,6 +3,7 @@ use crate::renderer::{
 };
 use alloc::borrow::Cow;
 use std::path::PathBuf;
+use wgpu::DxcShaderModel;
 
 pub use wgpu::{
     Backend, Backends, Dx12Compiler, Features as WgpuFeatures, Gles3MinorVersion, InstanceFlags,
@@ -131,6 +132,7 @@ impl Default for WgpuSettings {
                     Dx12Compiler::DynamicDxc {
                         dxc_path: String::from(dxc),
                         dxil_path: String::from(dxil),
+                        max_shader_model: DxcShaderModel::V6_5,
                     }
                 } else {
                     Dx12Compiler::Fxc

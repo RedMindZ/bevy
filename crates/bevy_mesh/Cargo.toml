@@ -27,7 +27,7 @@ bevy_platform_support = { path = "../bevy_platform_support", version = "0.16.0-r
 # other
 bitflags = { version = "2.3", features = ["serde"] }
 bytemuck = { version = "1.5" }
-wgpu-types = { version = "24", default-features = false }
+wgpu-types = { path = "../../../wgpu/wgpu-types", default-features = false }
 serde = { version = "1", features = ["derive"] }
 hexasphere = "15.0"
 thiserror = { version = "2", default-features = false }

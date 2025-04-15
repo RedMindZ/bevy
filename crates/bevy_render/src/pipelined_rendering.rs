@@ -187,7 +187,7 @@ fn renderer_extract(app_world: &mut World, _world: &mut World) {
         world.resource_scope(|world, mut render_channels: Mut<RenderAppChannels>| {
             let mut render_app = {
                 #[cfg(feature = "trace")]
-                let _wait_span = bevy_utils::tracing::info_span!("wait for render app").entered();
+                let _wait_span = tracing::info_span!("wait for render app").entered();
 
                 // we use a scope here to run any main thread tasks that the render world still needs to run
                 // while we wait for the render world to be received.
@@ -204,8 +204,7 @@ fn renderer_extract(app_world: &mut World, _world: &mut World) {
 
             {
                 #[cfg(feature = "trace")]
-                let _extract_span =
-                    bevy_utils::tracing::info_span!("extract to render app").entered();
+                let _extract_span = tracing::info_span!("extract to render app").entered();
                 render_app.extract(world);
             }
 

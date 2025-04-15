@@ -129,6 +129,7 @@ impl<T: Event> Plugin for WinitPlugin<T> {
             .init_resource::<WinitSettings>()
             .insert_resource(DisplayHandleWrapper(event_loop.owned_display_handle()))
             .add_event::<RawWinitWindowEvent>()
+            .insert_resource(EventLoopProxyWrapper(event_loop.create_proxy()))
             .set_runner(|app| winit_runner(app, event_loop))
             .add_systems(
                 Last,
@@ -175,7 +176,7 @@ pub struct RawWinitWindowEvent {
 ///
 /// Use `Res<EventLoopProxyWrapper>` to receive this resource.
 #[derive(Resource, Deref)]
-pub struct EventLoopProxyWrapper<T: 'static>(EventLoopProxy<T>);
+pub struct EventLoopProxyWrapper<T: 'static>(pub EventLoopProxy<T>);
 
 /// A wrapper around [`winit::event_loop::OwnedDisplayHandle`]
 ///

@@ -7,7 +7,7 @@ use crate::WgpuWrapper;
 use bevy_ecs::resource::Resource;
 use wgpu::{
     util::DeviceExt, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BufferAsyncError, BufferBindingType, MaintainResult,
+    BindGroupLayoutEntry, BufferAsyncError, BufferBindingType,
 };
 
 /// This GPU device is responsible for the creation of most rendering and compute resources.
@@ -108,7 +108,7 @@ impl RenderDevice {
         self.device.create_shader_module(desc)
     }
 
-    /// Check for resource cleanups and mapping callbacks.
+    /// Check for resource cleanups and mapping callbacks. Will block if [`wgpu::PollType::Wait`] is passed.
     ///
     /// Return `true` if the queue is empty, or `false` if there are more queue
     /// submissions still in flight. (Note that, unless access to the [`wgpu::Queue`] is
@@ -116,10 +116,10 @@ impl RenderDevice {
     /// the caller receives it. `Queue`s can be shared between threads, so
     /// other threads could submit new work at any time.)
     ///
-    /// no-op on the web, device is automatically polled.
+    /// When running on WebGPU, this is a no-op. `Device`s are automatically polled.
     #[inline]
-    pub fn poll(&self, maintain: wgpu::Maintain) -> MaintainResult {
-        self.device.poll(maintain)
+    pub fn poll(&self, poll_type: wgpu::PollType) -> Result<wgpu::PollStatus, wgpu::PollError> {
+        self.device.poll(poll_type)
     }
 
     /// Creates an empty [`CommandEncoder`](wgpu::CommandEncoder).

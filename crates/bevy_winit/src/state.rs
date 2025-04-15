@@ -52,8 +52,8 @@ use crate::{
     accessibility::AccessKitAdapters,
     converters, create_windows,
     system::{create_monitors, CachedWindow, WinitWindowPressedKeys},
-    AppSendEvent, CreateMonitorParams, CreateWindowParams, EventLoopProxyWrapper,
-    RawWinitWindowEvent, UpdateMode, WinitSettings, WinitWindows,
+    AppSendEvent, CreateMonitorParams, CreateWindowParams, RawWinitWindowEvent, UpdateMode,
+    WinitSettings, WinitWindows,
 };
 
 /// Persistent state that is used to run the [`App`] according to the current
@@ -110,8 +110,10 @@ struct WinitAppRunnerState<T: Event> {
 
 impl<T: Event> WinitAppRunnerState<T> {
     fn new(mut app: App) -> Self {
+        app.add_event::<T>();
+
         #[cfg(feature = "custom_cursor")]
-        app.add_event::<T>().init_resource::<CustomCursorCache>();
+        app.init_resource::<CustomCursorCache>();
 
         let event_writer_system_state: SystemState<(
             EventWriter<WindowResized>,
@@ -249,7 +251,7 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
 
     fn window_event(
         &mut self,
-        _event_loop: &ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
         window_id: WindowId,
         event: WindowEvent,
     ) {
@@ -291,6 +293,8 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
         match event {
             WindowEvent::Resized(size) => {
                 react_to_resize(window, &mut win, size, &mut window_resized);
+                self.ran_update_since_last_redraw = false;
+                self.redraw_requested(event_loop);
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 react_to_scale_factor_change(
@@ -460,15 +464,15 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
             WindowEvent::RedrawRequested => {
                 self.ran_update_since_last_redraw = false;
 
-                // https://github.com/bevyengine/bevy/issues/17488
-                #[cfg(target_os = "windows")]
-                {
-                    // Have the startup behavior run in about_to_wait, which prevents issues with
-                    // invisible window creation. https://github.com/bevyengine/bevy/issues/18027
-                    if self.startup_forced_updates == 0 {
-                        self.redraw_requested(_event_loop);
-                    }
-                }
+                // // https://github.com/bevyengine/bevy/issues/17488
+                // #[cfg(target_os = "windows")]
+                // {
+                //     // Have the startup behavior run in about_to_wait, which prevents issues with
+                //     // invisible window creation. https://github.com/bevyengine/bevy/issues/18027
+                //     if self.startup_forced_updates == 0 {
+                //         self.redraw_requested(event_loop);
+                //     }
+                // }
             }
             _ => {}
         }
@@ -506,30 +510,32 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
         create_windows(event_loop, create_window.get_mut(self.world_mut()));
         create_window.apply(self.world_mut());
 
-        // TODO: This is a workaround for https://github.com/bevyengine/bevy/issues/17488
-        //       while preserving the iOS fix in https://github.com/bevyengine/bevy/pull/11245
-        //       The monitor sync logic likely belongs in monitor event handlers and not here.
-        #[cfg(not(target_os = "windows"))]
         self.redraw_requested(event_loop);
 
-        // Have the startup behavior run in about_to_wait, which prevents issues with
-        // invisible window creation. https://github.com/bevyengine/bevy/issues/18027
-        #[cfg(target_os = "windows")]
-        {
-            let winit_windows = self.world().non_send_resource::<WinitWindows>();
-            let headless = winit_windows.windows.is_empty();
-            let exiting = self.app_exit.is_some();
-            let reactive = matches!(self.update_mode, UpdateMode::Reactive { .. });
-            let all_invisible = winit_windows
-                .windows
-                .iter()
-                .all(|(_, w)| !w.is_visible().unwrap_or(false));
-            if !exiting
-                && (self.startup_forced_updates > 0 || headless || all_invisible || reactive)
-            {
-                self.redraw_requested(event_loop);
-            }
-        }
+        // // TODO: This is a workaround for https://github.com/bevyengine/bevy/issues/17488
+        // //       while preserving the iOS fix in https://github.com/bevyengine/bevy/pull/11245
+        // //       The monitor sync logic likely belongs in monitor event handlers and not here.
+        // #[cfg(not(target_os = "windows"))]
+        // self.redraw_requested(event_loop);
+
+        // // Have the startup behavior run in about_to_wait, which prevents issues with
+        // // invisible window creation. https://github.com/bevyengine/bevy/issues/18027
+        // #[cfg(target_os = "windows")]
+        // {
+        //     let winit_windows = self.world().non_send_resource::<WinitWindows>();
+        //     let headless = winit_windows.windows.is_empty();
+        //     let exiting = self.app_exit.is_some();
+        //     let reactive = matches!(self.update_mode, UpdateMode::Reactive { .. });
+        //     let all_invisible = winit_windows
+        //         .windows
+        //         .iter()
+        //         .all(|(_, w)| !w.is_visible().unwrap_or(false));
+        //     if !exiting
+        //         && (self.startup_forced_updates > 0 || headless || all_invisible || reactive)
+        //     {
+        //         self.redraw_requested(event_loop);
+        //     }
+        // }
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
@@ -653,24 +659,36 @@ impl<T: Event> WinitAppRunnerState<T> {
                 #[cfg(not(feature = "custom_cursor"))]
                 self.update_cursors();
                 self.ran_update_since_last_redraw = true;
-
-                // Running the app may have changed the WinitSettings resource, so we have to re-extract it.
-                let (config, windows) = focused_windows_state.get(self.world());
-                let focused = windows.iter().any(|(_, window)| window.focused);
-                update_mode = config.update_mode(focused);
-
-                // Running the app may have requested a redraw, so we check the events.
-                let mut redraw_event_reader = EventCursor::<RequestRedraw>::default();
-                if let Some(app_redraw_events) =
-                    self.world().get_resource::<Events<RequestRedraw>>()
-                {
-                    if redraw_event_reader.read(app_redraw_events).last().is_some() {
-                        self.redraw_requested = true;
-                    }
-                }
             } else {
                 self.redraw_requested = true;
             }
+
+            // Read RequestRedraw events that may have been sent during the update
+            if let Some(app_redraw_events) = self.world().get_resource::<Events<RequestRedraw>>() {
+                let mut redraw_event_reader = EventCursor::<RequestRedraw>::default();
+                if redraw_event_reader.read(app_redraw_events).last().is_some() {
+                    self.redraw_requested = true;
+                }
+            }
+
+            // Running the app may have produced WindowCloseRequested events that should be processed
+            if let Some(close_request_events) =
+                self.world().get_resource::<Events<WindowCloseRequested>>()
+            {
+                let mut close_event_reader = EventCursor::<WindowCloseRequested>::default();
+                if close_event_reader
+                    .read(close_request_events)
+                    .last()
+                    .is_some()
+                {
+                    self.redraw_requested = true;
+                }
+            }
+
+            // Running the app may have changed the WinitSettings resource, so we have to re-extract it.
+            let (config, windows) = focused_windows_state.get(self.world());
+            let focused = windows.iter().any(|(_, window)| window.focused);
+            update_mode = config.update_mode(focused);
         }
 
         // The update mode could have been changed, so we need to redraw and force an update
@@ -939,9 +957,6 @@ pub fn winit_runner<T: Event>(mut app: App, event_loop: EventLoop<T>) -> AppExit
         app.finish();
         app.cleanup();
     }
-
-    app.world_mut()
-        .insert_resource(EventLoopProxyWrapper(event_loop.create_proxy()));
 
     let runner_state = WinitAppRunnerState::new(app);
 

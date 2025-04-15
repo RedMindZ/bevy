@@ -4,7 +4,7 @@
 use bevy::{
     ecs::{system::SystemState, world::CommandQueue},
     prelude::*,
-    tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task},
+    tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task, DEFAULT_TASK_PRIORITY},
 };
 use rand::Rng;
 use std::time::Duration;
@@ -58,7 +58,7 @@ fn spawn_tasks(mut commands: Commands) {
                 // executed in the background, and the Task future returned by
                 // spawn() can be used to poll for the result
                 let entity = commands.spawn_empty().id();
-                let task = thread_pool.spawn(async move {
+                let task = thread_pool.spawn(DEFAULT_TASK_PRIORITY, async move {
                     let duration = Duration::from_secs_f32(rand::thread_rng().gen_range(0.05..5.0));
 
                     // Pretend this is a time-intensive function. :)

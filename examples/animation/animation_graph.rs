@@ -16,7 +16,7 @@ use argh::FromArgs;
 
 #[cfg(not(target_arch = "wasm32"))]
 use {
-    bevy::{asset::io::file::FileAssetReader, tasks::IoTaskPool},
+    bevy::{asset::io::file::FileAssetReader, tasks::{IoTaskPool, DEFAULT_TASK_PRIORITY}},
     ron::ser::PrettyConfig,
     std::{fs::File, path::Path},
 };
@@ -179,7 +179,7 @@ fn setup_assets_programmatically(
         let animation_graph = animation_graph.clone();
 
         IoTaskPool::get()
-            .spawn(async move {
+            .spawn(DEFAULT_TASK_PRIORITY, async move {
                 let mut animation_graph_writer = File::create(Path::join(
                     &FileAssetReader::get_base_path(),
                     Path::join(Path::new("assets"), Path::new(ANIMATION_GRAPH_PATH)),

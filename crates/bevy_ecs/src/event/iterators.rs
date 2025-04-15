@@ -1,7 +1,6 @@
 #[cfg(feature = "multi_threaded")]
 use bevy_ecs::batching::BatchingStrategy;
 use bevy_ecs::event::{Event, EventCursor, EventId, EventInstance, Events};
-use bevy_tasks::DEFAULT_TASK_PRIORITY;
 use core::{iter::Chain, slice::Iter};
 
 /// An iterator that yields any unread events from an [`EventReader`](super::EventReader) or [`EventCursor`].
@@ -235,7 +234,7 @@ impl<'a, E: Event> EventParIter<'a, E> {
             pool.scope(|scope| {
                 for batch in chunks.into_iter().flatten().chain(remainders) {
                     let func = func.clone();
-                    scope.spawn(DEFAULT_TASK_PRIORITY, async move {
+                    scope.spawn(bevy_tasks::DEFAULT_TASK_PRIORITY, async move {
                         for event in batch {
                             func(&event.event, event.event_id);
                         }

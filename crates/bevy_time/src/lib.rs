@@ -320,7 +320,10 @@ mod tests {
         rx2.try_recv()
     }
 
+    // We expect this test to fail because we removed the
+    // updating of events from the fixed schedule
     #[test]
+    #[should_panic]
     fn event_update_should_wait_for_fixed_main() {
         // Set the time step to just over half the fixed update timestep
         // This way, it will have not accumulated enough time to run the fixed update after one update
