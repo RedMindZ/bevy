@@ -131,7 +131,6 @@ impl Default for WgpuSettings {
                 {
                     Dx12Compiler::DynamicDxc {
                         dxc_path: String::from(dxc),
-                        dxil_path: String::from(dxil),
                         max_shader_model: DxcShaderModel::V6_5,
                     }
                 } else {

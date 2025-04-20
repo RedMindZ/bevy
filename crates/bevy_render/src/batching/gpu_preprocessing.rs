@@ -21,7 +21,7 @@ use encase::{internal::WriteInto, ShaderSize};
 use indexmap::IndexMap;
 use nonmax::NonMaxU32;
 use tracing::error;
-use wgpu::{BindingResource, BufferUsages, DownlevelFlags, Features};
+use wgpu::{BindingResource, BufferUsages, Features};
 
 use crate::{
     experimental::occlusion_culling::OcclusionCulling,
@@ -1103,16 +1103,13 @@ impl FromWorld for GpuPreprocessingSupport {
         );
         // Depth downsampling for occlusion culling requires 12 textures
         let limit_support = device.limits().max_storage_textures_per_shader_stage >= 12;
-        let downlevel_support = adapter.get_downlevel_capabilities().flags.contains(
-            DownlevelFlags::VERTEX_AND_INSTANCE_INDEX_RESPECTS_RESPECTIVE_FIRST_VALUE_IN_INDIRECT_DRAW
-        );
 
         let max_supported_mode = if !feature_support
             || device.limits().max_compute_workgroup_size_x == 0
             || is_non_supported_android_device(adapter)
         {
             GpuPreprocessingMode::None
-        } else if !(feature_support && limit_support && downlevel_support) {
+        } else if !(feature_support && limit_support) {
             GpuPreprocessingMode::PreprocessingOnly
         } else {
             GpuPreprocessingMode::Culling
