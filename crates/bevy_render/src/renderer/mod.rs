@@ -235,6 +235,7 @@ pub fn create_instance_and_adapter(
                     },
                     noop: wgpu::NoopBackendOptions { enable: false },
                 },
+                memory_budget_thresholds: Default::default(),
             });
 
             if let Some(adapter) = instance
