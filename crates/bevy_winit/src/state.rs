@@ -251,7 +251,7 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
 
     fn window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        _event_loop: &ActiveEventLoop,
         window_id: WindowId,
         event: WindowEvent,
     ) {
@@ -293,8 +293,6 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
         match event {
             WindowEvent::Resized(size) => {
                 react_to_resize(window, &mut win, size, &mut window_resized);
-                self.ran_update_since_last_redraw = false;
-                self.redraw_requested(event_loop);
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 react_to_scale_factor_change(
