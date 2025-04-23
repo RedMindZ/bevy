@@ -82,6 +82,7 @@ use render_asset::{
     extract_render_asset_bytes_per_frame, reset_render_asset_bytes_per_frame,
     RenderAssetBytesPerFrame, RenderAssetBytesPerFrameLimiter,
 };
+use render_resource::PipelineCreationCallback;
 use renderer::{RenderAdapter, RenderDevice, RenderQueue};
 use settings::RenderResources;
 use sync_world::{
@@ -119,6 +120,9 @@ use tracing::debug;
 #[derive(Default)]
 pub struct RenderPlugin {
     pub render_creation: RenderCreation,
+    /// A callback that is called once a pipeline has been created.
+    /// This can be used to wake up the event loop once a pipeline is ready.
+    pub pipeline_creation_callback: Option<Arc<PipelineCreationCallback>>,
     /// If `true`, disables asynchronous pipeline compilation.
     /// This has no effect on macOS, Wasm, iOS, or without the `multi_threaded` feature.
     pub synchronous_pipeline_compilation: bool,
@@ -431,6 +435,7 @@ impl Plugin for RenderPlugin {
                 .insert_resource(PipelineCache::new(
                     device.clone(),
                     render_adapter.clone(),
+                    self.pipeline_creation_callback.clone(),
                     self.synchronous_pipeline_compilation,
                 ))
                 .insert_resource(device)

@@ -553,6 +553,8 @@ impl LayoutCache {
     }
 }
 
+pub type PipelineCreationCallback = dyn Fn() + Send + Sync + 'static;
+
 /// Cache for render and compute pipelines.
 ///
 /// The cache stores existing render and compute pipelines allocated on the GPU, as well as
@@ -573,6 +575,9 @@ pub struct PipelineCache {
     pipelines: Vec<CachedPipeline>,
     waiting_pipelines: HashSet<CachedPipelineId>,
     new_pipelines: Mutex<Vec<CachedPipeline>>,
+    /// A callback that is called once a pipeline has been created.
+    /// This can be used to wake up the event loop once a pipeline is ready.
+    pipeline_creation_callback: Option<Arc<PipelineCreationCallback>>,
     /// If `true`, disables asynchronous pipeline compilation.
     /// This has no effect on macOS, wasm, or without the `multi_threaded` feature.
     synchronous_pipeline_compilation: bool,
@@ -593,6 +598,7 @@ impl PipelineCache {
     pub fn new(
         device: RenderDevice,
         render_adapter: RenderAdapter,
+        pipeline_creation_callback: Option<Arc<PipelineCreationCallback>>,
         synchronous_pipeline_compilation: bool,
     ) -> Self {
         Self {
@@ -602,6 +608,7 @@ impl PipelineCache {
             waiting_pipelines: default(),
             new_pipelines: default(),
             pipelines: default(),
+            pipeline_creation_callback,
             synchronous_pipeline_compilation,
         }
     }
@@ -885,6 +892,7 @@ impl PipelineCache {
                     device.create_render_pipeline(&descriptor),
                 ))
             },
+            self.pipeline_creation_callback.clone(),
             self.synchronous_pipeline_compilation,
         )
     }
@@ -944,6 +952,7 @@ impl PipelineCache {
                     device.create_compute_pipeline(&descriptor),
                 ))
             },
+            self.pipeline_creation_callback.clone(),
             self.synchronous_pipeline_compilation,
         )
     }
@@ -1064,15 +1073,25 @@ impl PipelineCache {
 ))]
 fn create_pipeline_task(
     task: impl Future<Output = Result<Pipeline, PipelineCacheError>> + Send + 'static,
+    callback: Option<Arc<PipelineCreationCallback>>,
     sync: bool,
 ) -> CachedPipelineState {
     if !sync {
-        return CachedPipelineState::Creating(
-            bevy_tasks::AsyncComputeTaskPool::get().spawn(PIPELINE_CREATION_PRIORITY, task),
-        );
+        return CachedPipelineState::Creating(bevy_tasks::AsyncComputeTaskPool::get().spawn(
+            PIPELINE_CREATION_PRIORITY,
+            async move {
+                let result = task.await;
+                callback.inspect(|callback| callback());
+
+                result
+            },
+        ));
     }
 
-    match futures_lite::future::block_on(task) {
+    let result = futures_lite::future::block_on(task);
+    callback.inspect(|callback| callback());
+
+    match result {
         Ok(pipeline) => CachedPipelineState::Ok(pipeline),
         Err(err) => CachedPipelineState::Err(err),
     }
@@ -1085,9 +1104,13 @@ fn create_pipeline_task(
 ))]
 fn create_pipeline_task(
     task: impl Future<Output = Result<Pipeline, PipelineCacheError>> + Send + 'static,
+    callback: Option<Arc<PipelineCreationCallback>>,
     _sync: bool,
 ) -> CachedPipelineState {
-    match futures_lite::future::block_on(task) {
+    let result = futures_lite::future::block_on(task);
+    callback.inspect(|callback| callback());
+
+    match result {
         Ok(pipeline) => CachedPipelineState::Ok(pipeline),
         Err(err) => CachedPipelineState::Err(err),
     }

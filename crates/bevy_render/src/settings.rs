@@ -123,12 +123,8 @@ impl Default for WgpuSettings {
                 Dx12Compiler::StaticDxc
             } else {
                 let dxc = "dxcompiler.dll";
-                let dxil = "dxil.dll";
 
-                if cfg!(target_os = "windows")
-                    && std::fs::metadata(dxc).is_ok()
-                    && std::fs::metadata(dxil).is_ok()
-                {
+                if cfg!(target_os = "windows") && std::fs::metadata(dxc).is_ok() {
                     Dx12Compiler::DynamicDxc {
                         dxc_path: String::from(dxc),
                         max_shader_model: DxcShaderModel::V6_5,
