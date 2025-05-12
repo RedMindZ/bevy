@@ -1,6 +1,6 @@
 [package]
 name = "bevy_tasks"
-version = "0.16.0-rc.3"
+version = "0.16.0"
 edition = "2024"
 description = "A task executor for Bevy Engine"
 homepage = "https://bevyengine.org"
@@ -17,21 +17,21 @@ multi_threaded = ["dep:async-channel", "dep:concurrent-queue"]
 
 # Platform Compatibility
 
+## Allows access to the `std` crate. Enabling this feature will prevent compilation
+## on `no_std` targets, but provides access to certain additional features on
+## supported platforms.
+std = ["futures-lite/std", "async-task/std", "bevy_platform/std"]
+
 ## `critical-section` provides the building blocks for synchronization primitives
 ## on all platforms, including `no_std`.
-critical-section = ["bevy_platform_support/critical-section"]
+critical-section = ["bevy_platform/critical-section"]
 
 ## Enables use of browser APIs.
 ## Note this is currently only applicable on `wasm32` architectures.
-web = [
-  "bevy_platform_support/web",
-  "dep:wasm-bindgen-futures",
-  "dep:futures-channel",
-]
+web = ["bevy_platform/web", "dep:wasm-bindgen-futures", "dep:futures-channel"]
 
 [dependencies]
-bevy_platform_support = { path = "../bevy_platform_support", version = "0.16.0-rc.3", default-features = false, features = [
-  "std",
+bevy_platform = { path = "../bevy_platform", version = "0.16.0", default-features = false, features = [
   "alloc",
 ] }
 

@@ -1,5 +1,5 @@
 use alloc::{boxed::Box, vec::Vec};
-use bevy_platform_support::sync::Arc;
+use bevy_platform::sync::Arc;
 use bevy_tasks::{ComputeTaskPool, Scope, TaskPool, ThreadExecutor, DEFAULT_TASK_PRIORITY};
 use bevy_utils::{default, syncunsafecell::SyncUnsafeCell};
 use concurrent_queue::ConcurrentQueue;

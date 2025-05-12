@@ -1,5 +1,5 @@
 use crate::{executor::LocalExecutor, Task};
-use bevy_platform_support::sync::Arc;
+use bevy_platform::sync::Arc;
 use core::{cell::RefCell, future::Future, marker::PhantomData, mem};
 use std::{string::String, thread_local, vec::Vec};
 
