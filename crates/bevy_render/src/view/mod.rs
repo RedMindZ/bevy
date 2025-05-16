@@ -789,20 +789,70 @@ impl ViewTarget {
 
     /// The "main" sampled texture.
     pub fn sampled_main_texture(&self) -> Option<&Texture> {
-        self.main_textures
-            .a
-            .resolve_target
-            .as_ref()
-            .map(|sampled| &sampled.texture)
+        if self.main_texture.load(Ordering::SeqCst) == 0 {
+            self.main_textures
+                .a
+                .resolve_target
+                .as_ref()
+                .map(|sampled| &sampled.texture)
+        } else {
+            self.main_textures
+                .b
+                .resolve_target
+                .as_ref()
+                .map(|sampled| &sampled.texture)
+        }
+    }
+
+    /// The other "main" sampled texture.
+    pub fn sampled_main_texture_other(&self) -> Option<&Texture> {
+        if self.main_texture.load(Ordering::SeqCst) == 0 {
+            self.main_textures
+                .b
+                .resolve_target
+                .as_ref()
+                .map(|sampled| &sampled.texture)
+        } else {
+            self.main_textures
+                .a
+                .resolve_target
+                .as_ref()
+                .map(|sampled| &sampled.texture)
+        }
     }
 
     /// The "main" sampled texture view.
     pub fn sampled_main_texture_view(&self) -> Option<&TextureView> {
-        self.main_textures
-            .a
-            .resolve_target
-            .as_ref()
-            .map(|sampled| &sampled.default_view)
+        if self.main_texture.load(Ordering::SeqCst) == 0 {
+            self.main_textures
+                .a
+                .resolve_target
+                .as_ref()
+                .map(|sampled| &sampled.default_view)
+        } else {
+            self.main_textures
+                .b
+                .resolve_target
+                .as_ref()
+                .map(|sampled| &sampled.default_view)
+        }
+    }
+
+    /// The other "main" sampled texture view.
+    pub fn sampled_main_texture_other_view(&self) -> Option<&TextureView> {
+        if self.main_texture.load(Ordering::SeqCst) == 0 {
+            self.main_textures
+                .b
+                .resolve_target
+                .as_ref()
+                .map(|sampled| &sampled.default_view)
+        } else {
+            self.main_textures
+                .a
+                .resolve_target
+                .as_ref()
+                .map(|sampled| &sampled.default_view)
+        }
     }
 
     #[inline]
@@ -1072,7 +1122,7 @@ pub fn prepare_view_targets(
             _ => Some(clear_color_global.0),
         };
 
-        let (a, b, sampled, main_texture) = textures
+        let (a, b, sampled_a, sampled_b, main_texture) = textures
             .entry((camera.target.clone(), texture_usage.0, view.hdr, msaa))
             .or_insert_with(|| {
                 let descriptor = TextureDescriptor {
@@ -1103,34 +1153,44 @@ pub fn prepare_view_targets(
                         ..descriptor
                     },
                 );
-                let sampled = if msaa.samples() > 1 {
-                    let sampled = texture_cache.get(
+                let (sampled_a, sampled_b) = if msaa.samples() > 1 {
+                    let descriptor = TextureDescriptor {
+                        label: None,
+                        size,
+                        mip_level_count: 1,
+                        sample_count: msaa.samples(),
+                        dimension: TextureDimension::D2,
+                        format: main_texture_format,
+                        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+                        view_formats: descriptor.view_formats,
+                    };
+                    let sampled_a = texture_cache.get(
                         &render_device,
                         TextureDescriptor {
-                            label: Some("main_texture_sampled"),
-                            size,
-                            mip_level_count: 1,
-                            sample_count: msaa.samples(),
-                            dimension: TextureDimension::D2,
-                            format: main_texture_format,
-                            usage: TextureUsages::RENDER_ATTACHMENT
-                                | TextureUsages::TEXTURE_BINDING,
-                            view_formats: descriptor.view_formats,
+                            label: Some("main_texture_sampled_a"),
+                            ..descriptor
                         },
                     );
-                    Some(sampled)
+                    let sampled_b = texture_cache.get(
+                        &render_device,
+                        TextureDescriptor {
+                            label: Some("main_texture_sampled_b"),
+                            ..descriptor
+                        },
+                    );
+                    (Some(sampled_a), Some(sampled_b))
                 } else {
-                    None
+                    (None, None)
                 };
                 let main_texture = Arc::new(AtomicUsize::new(0));
-                (a, b, sampled, main_texture)
+                (a, b, sampled_a, sampled_b, main_texture)
             });
 
         let converted_clear_color = clear_color.map(Into::into);
 
         let main_textures = MainTargetTextures {
-            a: ColorAttachment::new(a.clone(), sampled.clone(), converted_clear_color),
-            b: ColorAttachment::new(b.clone(), sampled.clone(), converted_clear_color),
+            a: ColorAttachment::new(a.clone(), sampled_a.clone(), converted_clear_color),
+            b: ColorAttachment::new(b.clone(), sampled_b.clone(), converted_clear_color),
             main_texture: main_texture.clone(),
         };
 
