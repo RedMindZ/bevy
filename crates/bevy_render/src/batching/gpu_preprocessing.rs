@@ -20,7 +20,7 @@ use bytemuck::{Pod, Zeroable};
 use encase::{internal::WriteInto, ShaderSize};
 use indexmap::IndexMap;
 use nonmax::NonMaxU32;
-use tracing::{error, info};
+use tracing::error;
 use wgpu::{BindingResource, BufferUsages, DownlevelFlags, Features};
 
 use crate::{
@@ -1123,16 +1123,16 @@ impl FromWorld for GpuPreprocessingSupport {
         let max_supported_mode = if device.limits().max_compute_workgroup_size_x == 0
             || is_non_supported_android_device(adapter)
         {
-            info!(
-                "GPU preprocessing is not supported on this device. \
-                Falling back to CPU preprocessing.",
-            );
+            // info!(
+            //     "GPU preprocessing is not supported on this device. \
+            //     Falling back to CPU preprocessing.",
+            // );
             GpuPreprocessingMode::None
         } else if !(culling_feature_support && limit_support && downlevel_support) {
-            info!("Some GPU preprocessing are limited on this device.");
+            // info!("Some GPU preprocessing are limited on this device.");
             GpuPreprocessingMode::PreprocessingOnly
         } else {
-            info!("GPU preprocessing is fully supported on this device.");
+            // info!("GPU preprocessing is fully supported on this device.");
             GpuPreprocessingMode::Culling
         };
 

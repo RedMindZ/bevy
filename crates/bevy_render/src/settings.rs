@@ -72,29 +72,26 @@ impl Default for WgpuSettings {
             Backends::all()
         };
 
-        let backends_flags = Backends::from_env().unwrap_or(default_backends);
-
         let mut backends = Vec::new();
-        if backends_flags.contains(Backends::VULKAN) {
+        if default_backends.contains(Backends::VULKAN) {
             backends.push(Backend::Vulkan);
         }
-        if backends_flags.contains(Backends::METAL) {
+        if default_backends.contains(Backends::METAL) {
             backends.push(Backend::Metal);
         }
-        if backends_flags.contains(Backends::DX12) {
+        if default_backends.contains(Backends::DX12) {
             backends.push(Backend::Dx12);
         }
-        if backends_flags.contains(Backends::GL) {
+        if default_backends.contains(Backends::GL) {
             backends.push(Backend::Gl);
         }
-        if backends_flags.contains(Backends::BROWSER_WEBGPU) {
+        if default_backends.contains(Backends::BROWSER_WEBGPU) {
             backends.push(Backend::BrowserWebGpu);
         }
 
-        let power_preference =
-            PowerPreference::from_env().unwrap_or(PowerPreference::HighPerformance);
+        let power_preference = PowerPreference::HighPerformance;
 
-        let priority = settings_priority_from_env().unwrap_or(WgpuSettingsPriority::Functionality);
+        let priority = WgpuSettingsPriority::Functionality;
 
         let limits = if cfg!(all(
             feature = "webgl",
@@ -118,25 +115,24 @@ impl Default for WgpuSettings {
             limits
         };
 
-        let dx12_shader_compiler =
-            Dx12Compiler::from_env().unwrap_or(if cfg!(feature = "statically-linked-dxc") {
-                Dx12Compiler::StaticDxc
-            } else {
-                let dxc = "dxcompiler.dll";
+        let dx12_shader_compiler = if cfg!(feature = "statically-linked-dxc") {
+            Dx12Compiler::StaticDxc
+        } else {
+            let dxc = "dxcompiler.dll";
 
-                if cfg!(target_os = "windows") && std::fs::metadata(dxc).is_ok() {
-                    Dx12Compiler::DynamicDxc {
-                        dxc_path: String::from(dxc),
-                        max_shader_model: DxcShaderModel::V6_5,
-                    }
-                } else {
-                    Dx12Compiler::Fxc
+            if cfg!(target_os = "windows") && std::fs::metadata(dxc).is_ok() {
+                Dx12Compiler::DynamicDxc {
+                    dxc_path: String::from(dxc),
+                    max_shader_model: DxcShaderModel::V6_5,
                 }
-            });
+            } else {
+                Dx12Compiler::Fxc
+            }
+        };
 
-        let gles3_minor_version = Gles3MinorVersion::from_env().unwrap_or_default();
+        let gles3_minor_version = Gles3MinorVersion::default();
 
-        let instance_flags = InstanceFlags::default().with_env();
+        let instance_flags = InstanceFlags::default();
 
         Self {
             device_label: Default::default(),
@@ -170,31 +166,8 @@ impl WgpuSettings {
         backends: &[Backend],
         power_preference: PowerPreference,
     ) -> Self {
-        let backends = Backends::from_env().map_or(backends.into(), |flags| {
-            let mut backends = Vec::new();
-            if flags.contains(Backends::VULKAN) {
-                backends.push(Backend::Vulkan);
-            }
-            if flags.contains(Backends::METAL) {
-                backends.push(Backend::Metal);
-            }
-            if flags.contains(Backends::DX12) {
-                backends.push(Backend::Dx12);
-            }
-            if flags.contains(Backends::GL) {
-                backends.push(Backend::Gl);
-            }
-            if flags.contains(Backends::BROWSER_WEBGPU) {
-                backends.push(Backend::BrowserWebGpu);
-            }
-
-            backends
-        });
-
-        let power_preference = PowerPreference::from_env().unwrap_or(power_preference);
-
         Self {
-            backends: Some(backends),
+            backends: Some(backends.into()),
             power_preference,
             ..Default::default()
         }
@@ -238,20 +211,4 @@ impl From<WgpuSettings> for RenderCreation {
     fn from(value: WgpuSettings) -> Self {
         Self::Automatic(value)
     }
-}
-
-/// Get a features/limits priority from the environment variable `WGPU_SETTINGS_PRIO`
-pub fn settings_priority_from_env() -> Option<WgpuSettingsPriority> {
-    Some(
-        match std::env::var("WGPU_SETTINGS_PRIO")
-            .as_deref()
-            .map(str::to_lowercase)
-            .as_deref()
-        {
-            Ok("compatibility") => WgpuSettingsPriority::Compatibility,
-            Ok("functionality") => WgpuSettingsPriority::Functionality,
-            Ok("webgl2") => WgpuSettingsPriority::WebGL2,
-            _ => return None,
-        },
-    )
 }
