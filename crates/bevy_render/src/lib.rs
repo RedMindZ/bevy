@@ -313,47 +313,43 @@ impl Plugin for RenderPlugin {
                 unsafe { initialize_render_app(app) };
             }
             RenderCreation::Automatic(render_creation) => {
-                if let Some(backends) = &render_creation.backends {
-                    let future_render_resources_wrapper = Arc::new(Mutex::new(None));
-                    app.insert_resource(FutureRenderResources(
-                        future_render_resources_wrapper.clone(),
-                    ));
+                let future_render_resources_wrapper = Arc::new(Mutex::new(None));
+                app.insert_resource(FutureRenderResources(
+                    future_render_resources_wrapper.clone(),
+                ));
 
-                    let settings = render_creation.clone();
-                    let async_renderer = async move {
-                        let (instance, adapter) = renderer::create_instance_and_adapter(
-                            backends, &settings,
-                        )
+                let settings = render_creation.clone();
+                let async_renderer = async move {
+                    let (instance, adapter) = renderer::create_instance_and_adapter(&settings)
                         .expect(
                             "Unable to find a GPU! Make sure you have installed required drivers!",
                         );
 
-                        let (device, queue, adapter_info, render_adapter) =
-                            renderer::initialize_renderer(adapter, &settings).await;
-                        debug!("Configured wgpu adapter Limits: {:#?}", device.limits());
-                        debug!("Configured wgpu adapter Features: {:#?}", device.features());
-                        let mut future_render_resources_inner =
-                            future_render_resources_wrapper.lock().unwrap();
-                        *future_render_resources_inner = Some(RenderResources(
-                            device,
-                            queue,
-                            adapter_info,
-                            render_adapter,
-                            RenderInstance(Arc::new(WgpuWrapper::new(instance))),
-                        ));
-                    };
-                    // In wasm, spawn a task and detach it for execution
-                    #[cfg(target_arch = "wasm32")]
-                    bevy_tasks::IoTaskPool::get()
-                        .spawn_local(async_renderer)
-                        .detach();
-                    // Otherwise, just block for it to complete
-                    #[cfg(not(target_arch = "wasm32"))]
-                    futures_lite::future::block_on(async_renderer);
+                    let (device, queue, adapter_info, render_adapter) =
+                        renderer::initialize_renderer(adapter, &settings).await;
+                    debug!("Configured wgpu adapter Limits: {:#?}", device.limits());
+                    debug!("Configured wgpu adapter Features: {:#?}", device.features());
+                    let mut future_render_resources_inner =
+                        future_render_resources_wrapper.lock().unwrap();
+                    *future_render_resources_inner = Some(RenderResources(
+                        device,
+                        queue,
+                        adapter_info,
+                        render_adapter,
+                        RenderInstance(Arc::new(WgpuWrapper::new(instance))),
+                    ));
+                };
+                // In wasm, spawn a task and detach it for execution
+                #[cfg(target_arch = "wasm32")]
+                bevy_tasks::IoTaskPool::get()
+                    .spawn_local(async_renderer)
+                    .detach();
+                // Otherwise, just block for it to complete
+                #[cfg(not(target_arch = "wasm32"))]
+                futures_lite::future::block_on(async_renderer);
 
-                    // SAFETY: Plugins should be set up on the main thread.
-                    unsafe { initialize_render_app(app) };
-                }
+                // SAFETY: Plugins should be set up on the main thread.
+                unsafe { initialize_render_app(app) };
             }
         };
 

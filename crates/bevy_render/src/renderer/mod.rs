@@ -189,10 +189,7 @@ pub struct RenderAdapterInfo(pub WgpuWrapper<AdapterInfo>);
 /// first requested backend that has an adapter with the requested power preference.
 ///
 /// Prioritizes power preference over backend.
-pub fn create_instance_and_adapter(
-    requested_backends: &[Backend],
-    settings: &WgpuSettings,
-) -> Option<(Instance, Adapter)> {
+pub fn create_instance_and_adapter(settings: &WgpuSettings) -> Option<(Instance, Adapter)> {
     // We use the same order of device types as `wgpu` does in "wgpu-core-0.19.0\src\instance.rs:898"
     let target_device_types = match settings.power_preference {
         PowerPreference::None => [
@@ -217,6 +214,12 @@ pub fn create_instance_and_adapter(
             DeviceType::Cpu,
         ],
     };
+
+    let requested_backends =
+        settings
+            .backends
+            .as_deref()
+            .unwrap_or(&[Backend::Vulkan, Backend::Dx12, Backend::Metal]);
 
     for target_device_type in target_device_types {
         for backend in requested_backends {
