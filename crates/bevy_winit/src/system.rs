@@ -17,7 +17,7 @@ use bevy_window::{
 use tracing::{error, info, warn};
 
 use winit::{
-    dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize},
+    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
     event_loop::ActiveEventLoop,
 };
 
@@ -527,11 +527,13 @@ pub(crate) fn changed_windows(
             winit_window.set_ime_allowed(window.ime_enabled);
         }
 
-        if window.ime_position != cache.window.ime_position {
-            winit_window.set_ime_cursor_area(
-                LogicalPosition::new(window.ime_position.x, window.ime_position.y),
-                PhysicalSize::new(10, 10),
-            );
+        if window.ime_area != cache.window.ime_area {
+            if let Some(area) = window.ime_area {
+                winit_window.set_ime_cursor_area(
+                    PhysicalPosition::new(area.min.x, area.min.y),
+                    PhysicalSize::new(area.width(), area.height()),
+                );
+            }
         }
 
         if window.window_theme != cache.window.window_theme {

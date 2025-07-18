@@ -5,7 +5,7 @@ use bevy_ecs::{
     entity::{ContainsEntity, Entity},
     prelude::Component,
 };
-use bevy_math::{CompassOctant, DVec2, IVec2, UVec2, Vec2};
+use bevy_math::{CompassOctant, DVec2, IVec2, Rect, UVec2, Vec2};
 use log::warn;
 
 #[cfg(feature = "bevy_reflect")]
@@ -249,12 +249,12 @@ pub struct Window {
     ///
     /// - iOS / Android / Web: Unsupported.
     pub ime_enabled: bool,
-    /// Sets location of IME candidate box in client area coordinates relative to the top left.
+    /// Sets the area of IME candidate box in physical coordinates relative to the top left.
     ///
     ///  ## Platform-specific
     ///
     /// - iOS / Android / Web: Unsupported.
-    pub ime_position: Vec2,
+    pub ime_area: Option<Rect>,
     /// Sets a specific theme for the window.
     ///
     /// If `None` is provided, the window will use the system theme.
@@ -440,7 +440,7 @@ impl Default for Window {
             composite_alpha_mode: Default::default(),
             resize_constraints: Default::default(),
             ime_enabled: Default::default(),
-            ime_position: Default::default(),
+            ime_area: None,
             resizable: true,
             enabled_buttons: Default::default(),
             decorations: true,

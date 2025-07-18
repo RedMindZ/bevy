@@ -14,6 +14,7 @@ use bevy_ecs::{
 use bevy_image::{Image, TextureAtlasLayout};
 use bevy_input::{
     gestures::*,
+    keyboard::KeyboardFocusLost,
     mouse::{MouseButtonInput, MouseMotion, MouseScrollUnit, MouseWheel},
 };
 #[cfg(any(not(target_arch = "wasm32"), feature = "custom_cursor"))]
@@ -73,6 +74,8 @@ struct WinitAppRunnerState<T: Event> {
     user_event_received: bool,
     /// Is `true` if the app has requested a redraw since the last update.
     redraw_requested: bool,
+    /// Is `true` if the IME preedit event has been received since the last update, and the IME commit and disable events were not.
+    ime_preedit_active: bool,
     /// Is `true` if the app has already updated since the last redraw.
     ran_update_since_last_redraw: bool,
     /// Is `true` if enough time has elapsed since `last_update` to run another update.
@@ -94,6 +97,7 @@ struct WinitAppRunnerState<T: Event> {
         EventWriter<'static, WindowResized>,
         EventWriter<'static, WindowBackendScaleFactorChanged>,
         EventWriter<'static, WindowScaleFactorChanged>,
+        EventWriter<'static, KeyboardFocusLost>,
         NonSend<'static, WinitWindows>,
         Query<
             'static,
@@ -119,6 +123,7 @@ impl<T: Event> WinitAppRunnerState<T> {
             EventWriter<WindowResized>,
             EventWriter<WindowBackendScaleFactorChanged>,
             EventWriter<WindowScaleFactorChanged>,
+            EventWriter<KeyboardFocusLost>,
             NonSend<WinitWindows>,
             Query<(&mut Window, &mut CachedWindow, &mut WinitWindowPressedKeys)>,
             NonSendMut<AccessKitAdapters>,
@@ -134,6 +139,7 @@ impl<T: Event> WinitAppRunnerState<T> {
             device_event_received: false,
             user_event_received: false,
             redraw_requested: false,
+            ime_preedit_active: false,
             ran_update_since_last_redraw: false,
             wait_elapsed: false,
             // 3 seems to be enough, 5 is a safe margin
@@ -261,6 +267,7 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
             mut window_resized,
             mut window_backend_scale_factor_changed,
             mut window_scale_factor_changed,
+            mut keyboard_focus_lost,
             winit_windows,
             mut windows,
             mut access_kit_adapters,
@@ -325,15 +332,17 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
                 is_synthetic: false,
                 ..
             } => {
-                let keyboard_input = converters::convert_keyboard_input(event, window);
-                if event.state.is_pressed() {
-                    pressed_keys
-                        .0
-                        .insert(keyboard_input.key_code, keyboard_input.logical_key.clone());
-                } else {
-                    pressed_keys.0.remove(&keyboard_input.key_code);
+                if !self.ime_preedit_active {
+                    let keyboard_input = converters::convert_keyboard_input(event, window);
+                    if event.state.is_pressed() {
+                        pressed_keys
+                            .0
+                            .insert(keyboard_input.key_code, keyboard_input.logical_key.clone());
+                    } else {
+                        pressed_keys.0.remove(&keyboard_input.key_code);
+                    }
+                    self.bevy_window_events.send(keyboard_input);
                 }
-                self.bevy_window_events.send(keyboard_input);
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let physical_position = DVec2::new(position.x, position.y);
@@ -434,6 +443,28 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
             }
             WindowEvent::Ime(event) => match event {
                 event::Ime::Preedit(value, cursor) => {
+                    if !self.ime_preedit_active {
+                        self.ime_preedit_active = true;
+
+                        self.bevy_window_events
+                            .send(bevy_window::WindowEvent::KeyboardFocusLost(
+                                KeyboardFocusLost,
+                            ));
+                        keyboard_focus_lost.write(KeyboardFocusLost);
+
+                        for (key_code, logical_key) in pressed_keys.0.drain() {
+                            self.bevy_window_events
+                                .send(bevy_input::keyboard::KeyboardInput {
+                                    key_code,
+                                    logical_key,
+                                    state: bevy_input::ButtonState::Released,
+                                    repeat: false,
+                                    window,
+                                    text: None,
+                                });
+                        }
+                    }
+
                     self.bevy_window_events.send(Ime::Preedit {
                         window,
                         value,
@@ -441,12 +472,14 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
                     });
                 }
                 event::Ime::Commit(value) => {
+                    self.ime_preedit_active = false;
                     self.bevy_window_events.send(Ime::Commit { window, value });
                 }
                 event::Ime::Enabled => {
                     self.bevy_window_events.send(Ime::Enabled { window });
                 }
                 event::Ime::Disabled => {
+                    self.ime_preedit_active = false;
                     self.bevy_window_events.send(Ime::Disabled { window });
                 }
             },
