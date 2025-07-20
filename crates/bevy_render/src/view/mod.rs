@@ -914,6 +914,10 @@ impl ViewTarget {
         }
     }
 
+    pub fn output_attachment_mut(&mut self) -> &mut OutputColorAttachment {
+        &mut self.out_texture
+    }
+
     pub fn mark_as_dirty(&self) {
         self.main_textures.a.mark_as_dirty();
         self.main_textures.b.mark_as_dirty();

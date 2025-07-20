@@ -1066,11 +1066,7 @@ pub fn camera_system(
 pub struct CameraMainTextureUsages(pub TextureUsages);
 impl Default for CameraMainTextureUsages {
     fn default() -> Self {
-        Self(
-            TextureUsages::RENDER_ATTACHMENT
-                | TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC,
-        )
+        Self(TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING)
     }
 }
 
