@@ -76,7 +76,7 @@ fn toggle_ime(
     mut ui_writer: TextUiWriter,
 ) {
     if input.just_pressed(MouseButton::Left) {
-        window.ime_position = window.cursor_position().unwrap();
+        // window.ime_position = window.cursor_position().unwrap();
         window.ime_enabled = !window.ime_enabled;
 
         *ui_writer.text(*status_text, 3) = format!("{}\n", window.ime_enabled);

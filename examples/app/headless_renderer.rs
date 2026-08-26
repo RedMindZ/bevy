@@ -17,8 +17,8 @@ use bevy::{
         render_asset::{RenderAssetUsages, RenderAssets},
         render_graph::{self, NodeRunError, RenderGraph, RenderGraphContext, RenderLabel},
         render_resource::{
-            Buffer, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, Maintain,
-            MapMode, TexelCopyBufferInfo, TexelCopyBufferLayout, TextureDimension, TextureFormat,
+            Buffer, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, MapMode,
+            PollType, TexelCopyBufferInfo, TexelCopyBufferLayout, TextureDimension, TextureFormat,
             TextureUsages,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
@@ -446,10 +446,10 @@ fn receive_image_from_buffer(
         // In order for the mapping to be completed, one of three things must happen.
         // One of those can be calling `Device::poll`. This isn't necessary on the web as devices
         // are polled automatically but natively, we need to make sure this happens manually.
-        // `Maintain::Wait` will cause the thread to wait on native but not on WebGpu.
+        // `PollType::Wait` will cause the thread to wait on native but not on WebGpu.
 
         // This blocks until the gpu is done executing everything
-        render_device.poll(Maintain::wait()).panic_on_timeout();
+        render_device.poll(PollType::wait()).unwrap();
 
         // This blocks until the buffer is mapped
         r.recv().expect("Failed to receive the map_async message");
