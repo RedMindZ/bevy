@@ -1,4 +1,4 @@
-use crate::TaskPool;
+use crate::{TaskPool, TaskPriority};
 
 mod adapters;
 pub use adapters::*;
@@ -33,7 +33,7 @@ where
     /// Consumes the parallel iterator and returns the number of items.
     ///
     /// See [`Iterator::count()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.count)
-    fn count(mut self, priority: isize, pool: &TaskPool) -> usize {
+    fn count(mut self, priority: TaskPriority, pool: &TaskPool) -> usize {
         pool.scope(|s| {
             while let Some(batch) = self.next_batch() {
                 s.spawn(priority, async move { batch.count() });
@@ -101,7 +101,7 @@ where
     /// Calls a closure on each item of a parallel iterator.
     ///
     /// See [`Iterator::for_each()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.for_each)
-    fn for_each<F>(mut self, priority: isize, pool: &TaskPool, f: F)
+    fn for_each<F>(mut self, priority: TaskPriority, pool: &TaskPool, f: F)
     where
         F: FnMut(BatchIter::Item) + Send + Clone + Sync,
     {
@@ -190,7 +190,7 @@ where
     ///
     /// See [`Iterator::collect()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.collect)
     // TODO: Investigate optimizations for less copying
-    fn collect<C>(mut self, priority: isize, pool: &TaskPool) -> C
+    fn collect<C>(mut self, priority: TaskPriority, pool: &TaskPool) -> C
     where
         C: FromIterator<BatchIter::Item>,
         BatchIter::Item: Send + 'static,
@@ -209,7 +209,7 @@ where
     ///
     /// See [`Iterator::partition()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.partition)
     // TODO: Investigate optimizations for less copying
-    fn partition<C, F>(mut self, priority: isize, pool: &TaskPool, f: F) -> (C, C)
+    fn partition<C, F>(mut self, priority: TaskPriority, pool: &TaskPool, f: F) -> (C, C)
     where
         C: Default + Extend<BatchIter::Item> + Send,
         F: FnMut(&BatchIter::Item) -> bool + Send + Sync + Clone,
@@ -237,7 +237,7 @@ where
     /// results (in batch order).*
     ///
     /// See [`Iterator::fold()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.fold)
-    fn fold<C, F, D>(mut self, priority: isize, pool: &TaskPool, init: C, f: F) -> Vec<C>
+    fn fold<C, F, D>(mut self, priority: TaskPriority, pool: &TaskPool, init: C, f: F) -> Vec<C>
     where
         F: FnMut(C, BatchIter::Item) -> C + Send + Sync + Clone,
         C: Clone + Send + Sync + 'static,
@@ -256,7 +256,7 @@ where
     /// *Note that all is **not** short circuiting.*
     ///
     /// See [`Iterator::all()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.all)
-    fn all<F>(mut self, priority: isize, pool: &TaskPool, f: F) -> bool
+    fn all<F>(mut self, priority: TaskPriority, pool: &TaskPool, f: F) -> bool
     where
         F: FnMut(BatchIter::Item) -> bool + Send + Sync + Clone,
     {
@@ -275,7 +275,7 @@ where
     /// *Note that any is **not** short circuiting.*
     ///
     /// See [`Iterator::any()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.any)
-    fn any<F>(mut self, priority: isize, pool: &TaskPool, f: F) -> bool
+    fn any<F>(mut self, priority: TaskPriority, pool: &TaskPool, f: F) -> bool
     where
         F: FnMut(BatchIter::Item) -> bool + Send + Sync + Clone,
     {
@@ -295,7 +295,7 @@ where
     ///
     /// See [`Iterator::position()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.position)
     // TODO: Investigate optimizations for less copying
-    fn position<F>(mut self, priority: isize, pool: &TaskPool, f: F) -> Option<usize>
+    fn position<F>(mut self, priority: TaskPriority, pool: &TaskPool, f: F) -> Option<usize>
     where
         F: FnMut(BatchIter::Item) -> bool + Send + Sync + Clone,
     {
@@ -328,7 +328,7 @@ where
     /// Returns the maximum item of a parallel iterator.
     ///
     /// See [`Iterator::max()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.max)
-    fn max(mut self, priority: isize, pool: &TaskPool) -> Option<BatchIter::Item>
+    fn max(mut self, priority: TaskPriority, pool: &TaskPool) -> Option<BatchIter::Item>
     where
         BatchIter::Item: Ord + Send + 'static,
     {
@@ -345,7 +345,7 @@ where
     /// Returns the minimum item of a parallel iterator.
     ///
     /// See [`Iterator::min()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.min)
-    fn min(mut self, priority: isize, pool: &TaskPool) -> Option<BatchIter::Item>
+    fn min(mut self, priority: TaskPriority, pool: &TaskPool) -> Option<BatchIter::Item>
     where
         BatchIter::Item: Ord + Send + 'static,
     {
@@ -362,7 +362,12 @@ where
     /// Returns the item that gives the maximum value from the specified function.
     ///
     /// See [`Iterator::max_by_key()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.max_by_key)
-    fn max_by_key<R, F>(mut self, priority: isize, pool: &TaskPool, f: F) -> Option<BatchIter::Item>
+    fn max_by_key<R, F>(
+        mut self,
+        priority: TaskPriority,
+        pool: &TaskPool,
+        f: F,
+    ) -> Option<BatchIter::Item>
     where
         R: Ord,
         F: FnMut(&BatchIter::Item) -> R + Send + Sync + Clone,
@@ -383,7 +388,7 @@ where
     /// function.
     ///
     /// See [`Iterator::max_by()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.max_by)
-    fn max_by<F>(mut self, priority: isize, pool: &TaskPool, f: F) -> Option<BatchIter::Item>
+    fn max_by<F>(mut self, priority: TaskPriority, pool: &TaskPool, f: F) -> Option<BatchIter::Item>
     where
         F: FnMut(&BatchIter::Item, &BatchIter::Item) -> core::cmp::Ordering + Send + Sync + Clone,
         BatchIter::Item: Send + 'static,
@@ -402,7 +407,12 @@ where
     /// Returns the item that gives the minimum value from the specified function.
     ///
     /// See [`Iterator::min_by_key()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.min_by_key)
-    fn min_by_key<R, F>(mut self, priority: isize, pool: &TaskPool, f: F) -> Option<BatchIter::Item>
+    fn min_by_key<R, F>(
+        mut self,
+        priority: TaskPriority,
+        pool: &TaskPool,
+        f: F,
+    ) -> Option<BatchIter::Item>
     where
         R: Ord,
         F: FnMut(&BatchIter::Item) -> R + Send + Sync + Clone,
@@ -423,7 +433,7 @@ where
     /// function.
     ///
     /// See [`Iterator::min_by()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.min_by)
-    fn min_by<F>(mut self, priority: isize, pool: &TaskPool, f: F) -> Option<BatchIter::Item>
+    fn min_by<F>(mut self, priority: TaskPriority, pool: &TaskPool, f: F) -> Option<BatchIter::Item>
     where
         F: FnMut(&BatchIter::Item, &BatchIter::Item) -> core::cmp::Ordering + Send + Sync + Clone,
         BatchIter::Item: Send + 'static,
@@ -477,7 +487,7 @@ where
     /// Sums the items of a parallel iterator.
     ///
     /// See [`Iterator::sum()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.sum)
-    fn sum<S, R>(mut self, priority: isize, pool: &TaskPool) -> R
+    fn sum<S, R>(mut self, priority: TaskPriority, pool: &TaskPool) -> R
     where
         S: core::iter::Sum<BatchIter::Item> + Send + 'static,
         R: core::iter::Sum<S>,
@@ -494,7 +504,7 @@ where
     /// Multiplies all the items of a parallel iterator.
     ///
     /// See [`Iterator::product()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.product)
-    fn product<S, R>(mut self, priority: isize, pool: &TaskPool) -> R
+    fn product<S, R>(mut self, priority: TaskPriority, pool: &TaskPool) -> R
     where
         S: core::iter::Product<BatchIter::Item> + Send + 'static,
         R: core::iter::Product<S>,

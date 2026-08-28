@@ -1,12 +1,12 @@
 #![allow(unsafe_code)]
 
-use std::collections::BinaryHeap;
+use std::collections::{BTreeMap, BinaryHeap};
 use std::fmt;
 use std::marker::PhantomData;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::task::{Context, Poll, Waker};
 
@@ -15,6 +15,8 @@ use futures_lite::{future, prelude::*};
 use slab::Slab;
 
 use async_task::Task;
+
+use crate::TaskPriority;
 
 /// An async executor with task prioritization.
 pub struct Executor<'a> {
@@ -53,10 +55,26 @@ impl<'a> Executor<'a> {
         self.state().active().is_empty()
     }
 
+    /// Get the target priority for tasks with a dynamic priority.
+    ///
+    /// Each time a task with dynamic priority is picked for execution,
+    /// the task with the closest priority to the target priority will be picked.
+    pub fn get_target_dynamic_priority(&self) -> isize {
+        self.state().queue.get_target_dynamic_priority()
+    }
+
+    /// Set the target priority for tasks with a dynamic priority.
+    ///
+    /// Each time a task with dynamic priority is picked for execution,
+    /// the task with the closest priority to the target priority will be picked.
+    pub fn set_target_dynamic_priority(&self, value: isize) {
+        self.state().queue.set_target_dynamic_priority(value);
+    }
+
     /// Spawns a task onto the executor.
     pub fn spawn<T: Send + 'a>(
         &self,
-        priority: isize,
+        priority: TaskPriority,
         future: impl Future<Output = T> + Send + 'a,
     ) -> Task<T> {
         let mut active = self.state().active();
@@ -112,7 +130,7 @@ impl<'a> Executor<'a> {
     /// If this is an `Executor`, `F` and `T` must be `Send`.
     unsafe fn spawn_inner<T: 'a>(
         &self,
-        priority: isize,
+        priority: TaskPriority,
         future: impl Future<Output = T> + 'a,
         active: &mut Slab<Waker>,
     ) -> Task<T> {
@@ -177,14 +195,12 @@ impl<'a> Executor<'a> {
     }
 
     /// Returns a function that schedules a runnable task when it gets woken up.
-    fn schedule(&self, priority: isize) -> impl Fn(Runnable) + Send + Sync + 'static {
+    fn schedule(&self, priority: TaskPriority) -> impl Fn(Runnable) + Send + Sync + 'static {
         let state = self.state_as_arc();
 
         // TODO: If possible, push into the current local queue and notify the ticker.
         move |runnable| {
-            state
-                .queue
-                .locked(|q| q.push(PriorityRunnable::new(priority, runnable)));
+            state.queue.push(priority, runnable);
             state.notify();
         }
     }
@@ -255,7 +271,7 @@ impl Drop for Executor<'_> {
         }
         drop(active);
 
-        state.queue.locked(|q| q.clear());
+        state.queue.clear();
     }
 }
 
@@ -300,7 +316,11 @@ impl<'a> LocalExecutor<'a> {
     }
 
     /// Spawns a task onto the executor.
-    pub fn spawn<T: 'a>(&self, priority: isize, future: impl Future<Output = T> + 'a) -> Task<T> {
+    pub fn spawn<T: 'a>(
+        &self,
+        priority: TaskPriority,
+        future: impl Future<Output = T> + 'a,
+    ) -> Task<T> {
         let mut active = self.inner().state().active();
 
         // SAFETY: This executor is not thread safe, so the future and its result
@@ -321,7 +341,7 @@ impl<'a> LocalExecutor<'a> {
     /// [`spawn`]: LocalExecutor::spawn
     pub fn spawn_many<T: 'a, F: Future<Output = T> + 'a>(
         &self,
-        futures: impl IntoIterator<Item = (isize, F)>,
+        futures: impl IntoIterator<Item = (TaskPriority, F)>,
         handles: &mut impl Extend<Task<F::Output>>,
     ) {
         let mut active = self.inner().state().active();
@@ -383,13 +403,6 @@ impl<M> PriorityRunnable<M> {
     fn new(priority: isize, runnable: Runnable<M>) -> Self {
         Self { priority, runnable }
     }
-
-    /// Runs the task by polling its future.
-    ///
-    /// See [`Runnable::run`] for more info.
-    fn run(self) -> bool {
-        self.runnable.run()
-    }
 }
 
 impl<M> PartialEq for PriorityRunnable<M> {
@@ -412,28 +425,123 @@ impl<M> Ord for PriorityRunnable<M> {
     }
 }
 
-/// A simple concurrent priority queue, implemented by a binary heap behind a mutex.
-struct ConcurrentPriorityQueue<M = ()> {
-    queue: Mutex<BinaryHeap<PriorityRunnable<M>>>,
+/// Stores enqueued tasks based on their priority
+/// and supports concurrent operations on the queue.
+struct TaskQueue<M = ()> {
+    high_static_queue: Mutex<BinaryHeap<PriorityRunnable<M>>>,
+    low_dynamic_queue: Mutex<BTreeMap<isize, Vec<Runnable<M>>>>,
+    target_dynamic_priority: AtomicIsize,
 }
 
-impl<M> ConcurrentPriorityQueue<M> {
+impl<M> TaskQueue<M> {
     const fn new() -> Self {
         Self {
-            queue: Mutex::new(BinaryHeap::new()),
+            high_static_queue: Mutex::new(BinaryHeap::new()),
+            low_dynamic_queue: Mutex::new(BTreeMap::new()),
+            target_dynamic_priority: AtomicIsize::new(0),
         }
     }
 
-    /// Gives mutable access to the queue by locking the mutex while ignoring poison
-    fn locked<T>(&self, f: impl FnOnce(&mut BinaryHeap<PriorityRunnable<M>>) -> T) -> T {
-        f(&mut self.queue.lock().unwrap_or_else(|e| e.into_inner()))
+    /// Gives mutable access to `high_static_queue` by locking the mutex while ignoring poison
+    fn high_static_queue<T>(&self, f: impl FnOnce(&mut BinaryHeap<PriorityRunnable<M>>) -> T) -> T {
+        f(&mut self
+            .high_static_queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// Gives mutable access to `low_dynamic_queue` by locking the mutex while ignoring poison
+    fn low_dynamic_queue<T>(
+        &self,
+        f: impl FnOnce(&mut BTreeMap<isize, Vec<Runnable<M>>>) -> T,
+    ) -> T {
+        f(&mut self
+            .low_dynamic_queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()))
+    }
+
+    fn push(&self, priority: TaskPriority, runnable: Runnable<M>) {
+        match priority {
+            TaskPriority::HighStatic(priority) => {
+                self.high_static_queue(|q| q.push(PriorityRunnable::new(priority, runnable)));
+            }
+            TaskPriority::LowDynamic(key) => {
+                use std::collections::btree_map::Entry;
+                self.low_dynamic_queue(|q| match q.entry(key) {
+                    Entry::Vacant(entry) => _ = entry.insert(vec![runnable]),
+                    Entry::Occupied(mut entry) => _ = entry.get_mut().push(runnable),
+                });
+            }
+        }
+    }
+
+    fn pop(&self) -> Option<Runnable<M>> {
+        if let Some(runnable) = self.high_static_queue(|q| q.pop()) {
+            return Some(runnable.runnable);
+        }
+
+        let target = self.get_target_dynamic_priority();
+        if let Some(runnable) = self.low_dynamic_queue(|q| {
+            let mut cursor = q.lower_bound_mut(std::ops::Bound::Included(&target));
+
+            let runnable_is_next = match (
+                cursor.peek_prev().map(|p| *p.0),
+                cursor.peek_next().map(|n| *n.0),
+            ) {
+                (Some(prev_priority), Some(next_priority)) => {
+                    next_priority - target <= target - prev_priority
+                }
+                (Some(..), None) => false,
+                (None, Some(..)) => true,
+                (None, None) => return None,
+            };
+
+            let runnables = match runnable_is_next {
+                true => cursor.peek_next().unwrap().1,
+                false => cursor.peek_prev().unwrap().1,
+            };
+
+            debug_assert!(!runnables.is_empty());
+            let runnable = runnables.pop();
+            debug_assert!(runnable.is_some());
+            if runnables.is_empty() {
+                match runnable_is_next {
+                    true => cursor.remove_next(),
+                    false => cursor.remove_prev(),
+                };
+            }
+
+            runnable
+        }) {
+            return Some(runnable);
+        }
+
+        None
+    }
+
+    fn get_target_dynamic_priority(&self) -> isize {
+        self.target_dynamic_priority.load(Ordering::Relaxed)
+    }
+
+    fn set_target_dynamic_priority(&self, value: isize) {
+        self.target_dynamic_priority.store(value, Ordering::Relaxed);
+    }
+
+    fn clear(&self) {
+        self.high_static_queue(|q| q.clear());
+        self.low_dynamic_queue(|q| q.clear());
+    }
+
+    fn len(&self) -> usize {
+        self.high_static_queue(|q| q.len()) + self.low_dynamic_queue(|q| q.len())
     }
 }
 
 /// The state of a executor.
 struct State {
     /// The task queue.
-    queue: ConcurrentPriorityQueue,
+    queue: TaskQueue,
 
     /// Set to `true` when a sleeping ticker is notified or no tickers are sleeping.
     notified: AtomicBool,
@@ -449,7 +557,7 @@ impl State {
     /// Creates state for a new executor.
     const fn new() -> State {
         State {
-            queue: ConcurrentPriorityQueue::new(),
+            queue: TaskQueue::new(),
             notified: AtomicBool::new(true),
             sleepers: Mutex::new(Sleepers {
                 count: 0,
@@ -481,7 +589,7 @@ impl State {
     }
 
     pub(crate) fn try_tick(&self) -> bool {
-        match self.queue.locked(|q| q.pop()) {
+        match self.queue.pop() {
             None => false,
             Some(runnable) => {
                 // Notify another ticker now to pick up where this ticker left off, just in case
@@ -655,8 +763,7 @@ impl Ticker<'_> {
 
     /// Waits for the next runnable task to run.
     async fn runnable(&mut self) -> Runnable {
-        self.runnable_with(|| self.state.queue.locked(|q| q.pop()).map(|pr| pr.runnable))
-            .await
+        self.runnable_with(|| self.state.queue.pop()).await
     }
 
     /// Waits for the next runnable task to run, given a function that searches for a task.
@@ -763,7 +870,7 @@ fn debug_state(state: &State, name: &str, f: &mut fmt::Formatter<'_>) -> fmt::Re
 
     f.debug_struct(name)
         .field("active", &ActiveTasks(&state.active))
-        .field("tasks", &state.queue.locked(|q| q.len()))
+        .field("tasks", &state.queue.len())
         .field("sleepers", &SleepCount(&state.sleepers))
         .finish()
 }
@@ -818,9 +925,9 @@ fn _ensure_send_and_sync() {
     is_sync(ex.run(pending::<()>()));
     is_send(ex.tick());
     is_sync(ex.tick());
-    is_send(ex.schedule(0));
-    is_sync(ex.schedule(0));
-    is_static(ex.schedule(0));
+    is_send(ex.schedule(TaskPriority::HighStatic(0)));
+    is_sync(ex.schedule(TaskPriority::HighStatic(0)));
+    is_static(ex.schedule(TaskPriority::HighStatic(0)));
 
     /// ```compile_fail
     /// use async_executor::LocalExecutor;

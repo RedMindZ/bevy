@@ -12,7 +12,7 @@ use bevy_ecs::{
     system::{Res, ResMut},
 };
 use bevy_platform::collections::{hash_map::EntryRef, HashMap, HashSet};
-use bevy_tasks::Task;
+use bevy_tasks::{Task, TaskPriority};
 use bevy_utils::default;
 use core::{future::Future, hash::Hash, mem, ops::Deref};
 use naga::valid::Capabilities;
@@ -27,7 +27,7 @@ use wgpu::{
 };
 
 /// The priority of the task that creates pipelines on the [`bevy_tasks::AsyncComputeTaskPool`]
-pub const PIPELINE_CREATION_PRIORITY: isize = 64;
+pub const PIPELINE_CREATION_PRIORITY: TaskPriority = TaskPriority::HighStatic(64);
 
 /// A descriptor for a [`Pipeline`].
 ///

@@ -12,7 +12,7 @@ use futures_lite::FutureExt;
 use crate::{
     block_on,
     thread_executor::{ThreadExecutor, ThreadExecutorTicker},
-    Task,
+    Task, TaskPriority,
 };
 
 struct CallOnDrop(Option<Arc<dyn Fn() + Send + Sync + 'static>>);
@@ -383,12 +383,12 @@ impl TaskPool {
             unsafe { mem::transmute(external_executor) };
         // SAFETY: As above, all futures must complete in this function so we can change the lifetime
         let scope_executor: &'env ThreadExecutor<'env> = unsafe { mem::transmute(scope_executor) };
-        let spawned: ConcurrentQueue<FallibleTask<Result<T, Box<(dyn core::any::Any + Send)>>>> =
+        let spawned: ConcurrentQueue<FallibleTask<Result<T, Box<dyn core::any::Any + Send>>>> =
             ConcurrentQueue::unbounded();
         // shadow the variable so that the owned value cannot be used for the rest of the function
         // SAFETY: As above, all futures must complete in this function so we can change the lifetime
         let spawned: &'env ConcurrentQueue<
-            FallibleTask<Result<T, Box<(dyn core::any::Any + Send)>>>,
+            FallibleTask<Result<T, Box<dyn core::any::Any + Send>>>,
         > = unsafe { mem::transmute(&spawned) };
 
         let scope = Scope {
@@ -547,6 +547,22 @@ impl TaskPool {
         get_results.or(execute_forever).await
     }
 
+    /// Get the target priority for tasks with a dynamic priority.
+    ///
+    /// Each time a task with dynamic priority is picked for execution,
+    /// the task with the closest priority to the target priority will be picked.
+    pub fn get_target_dynamic_priority(&self) -> isize {
+        self.executor.get_target_dynamic_priority()
+    }
+
+    /// Set the target priority for tasks with a dynamic priority.
+    ///
+    /// Each time a task with dynamic priority is picked for execution,
+    /// the task with the closest priority to the target priority will be picked.
+    pub fn set_target_dynamic_priority(&self, value: isize) {
+        self.executor.set_target_dynamic_priority(value);
+    }
+
     /// Spawns a static future onto the thread pool. The returned [`Task`] is a
     /// future that can be polled for the result. It can also be canceled and
     /// "detached", allowing the task to continue running even if dropped. In
@@ -557,7 +573,7 @@ impl TaskPool {
     /// be used instead.
     pub fn spawn<T>(
         &self,
-        priority: isize,
+        priority: TaskPriority,
         future: impl Future<Output = T> + Send + 'static,
     ) -> Task<T>
     where
@@ -579,7 +595,7 @@ impl TaskPool {
     /// unless the provided future is not `Send`.
     pub fn spawn_local<T>(
         &self,
-        priority: isize,
+        priority: TaskPriority,
         future: impl Future<Output = T> + 'static,
     ) -> Task<T>
     where
@@ -635,7 +651,7 @@ pub struct Scope<'scope, 'env: 'scope, T> {
     executor: &'scope crate::executor::Executor<'scope>,
     external_executor: &'scope ThreadExecutor<'scope>,
     scope_executor: &'scope ThreadExecutor<'scope>,
-    spawned: &'scope ConcurrentQueue<FallibleTask<Result<T, Box<(dyn core::any::Any + Send)>>>>,
+    spawned: &'scope ConcurrentQueue<FallibleTask<Result<T, Box<dyn core::any::Any + Send>>>>,
     // make `Scope` invariant over 'scope and 'env
     scope: PhantomData<&'scope mut &'scope ()>,
     env: PhantomData<&'env mut &'env ()>,
@@ -650,7 +666,7 @@ impl<'scope, 'env, T: Send + 'scope> Scope<'scope, 'env, T> {
     /// instead.
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn<Fut: Future<Output = T> + 'scope + Send>(&self, priority: isize, f: Fut) {
+    pub fn spawn<Fut: Future<Output = T> + 'scope + Send>(&self, priority: TaskPriority, f: Fut) {
         let task = self
             .executor
             .spawn(priority, AssertUnwindSafe(f).catch_unwind())
@@ -666,7 +682,11 @@ impl<'scope, 'env, T: Send + 'scope> Scope<'scope, 'env, T> {
     /// [`Scope::spawn`] instead, unless the provided future needs to run on the scope's thread.
     ///
     /// For more information, see [`TaskPool::scope`].
-    pub fn spawn_on_scope<Fut: Future<Output = T> + 'scope + Send>(&self, priority: isize, f: Fut) {
+    pub fn spawn_on_scope<Fut: Future<Output = T> + 'scope + Send>(
+        &self,
+        priority: TaskPriority,
+        f: Fut,
+    ) {
         let task = self
             .scope_executor
             .spawn(priority, AssertUnwindSafe(f).catch_unwind())
@@ -685,7 +705,7 @@ impl<'scope, 'env, T: Send + 'scope> Scope<'scope, 'env, T> {
     /// For more information, see [`TaskPool::scope`].
     pub fn spawn_on_external<Fut: Future<Output = T> + 'scope + Send>(
         &self,
-        priority: isize,
+        priority: TaskPriority,
         f: Fut,
     ) {
         let task = self

@@ -4,6 +4,7 @@
     html_logo_url = "https://bevyengine.org/assets/icon.png",
     html_favicon_url = "https://bevyengine.org/assets/icon.png"
 )]
+#![feature(btree_cursors)]
 
 mod conditional_send {
     cfg_if::cfg_if! {
@@ -96,7 +97,20 @@ use core::num::NonZero;
 /// The default priority for a task.
 ///
 /// Any task that runs on the [`ComputeTaskPool`] or the [`IoTaskPool`] should use this priority.
-pub const DEFAULT_TASK_PRIORITY: isize = 0;
+pub const DEFAULT_TASK_PRIORITY: TaskPriority = TaskPriority::HighStatic(0);
+
+/// The priority of a task
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TaskPriority {
+    /// Tasks with a high priority execute in the order of their priorites
+    /// with higher priorities executing earlier,
+    /// and always execute before tasks with a low priority.
+    HighStatic(isize),
+
+    /// Tasks with a low priority execute the task with the closest value to the target dynamic priority,
+    /// and always execute after tasks with a high priority.
+    LowDynamic(isize),
+}
 
 /// Gets the logical CPU core count available to the current process.
 ///

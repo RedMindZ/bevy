@@ -1,4 +1,4 @@
-use super::TaskPool;
+use super::{TaskPool, TaskPriority};
 
 /// Provides functions for mapping read-only slices across a provided [`TaskPool`].
 pub trait ParallelSlice<T: Sync>: AsRef<[T]> {
@@ -35,7 +35,7 @@ pub trait ParallelSlice<T: Sync>: AsRef<[T]> {
     /// - [`ParallelSlice::par_splat_map`] for mapping when a specific chunk size is unknown.
     fn par_chunk_map<F, R>(
         &self,
-        priority: isize,
+        priority: TaskPriority,
         task_pool: &TaskPool,
         chunk_size: usize,
         f: F,
@@ -88,7 +88,7 @@ pub trait ParallelSlice<T: Sync>: AsRef<[T]> {
     /// [`ParallelSlice::par_chunk_map`] for mapping when a specific chunk size is desirable.
     fn par_splat_map<F, R>(
         &self,
-        priority: isize,
+        priority: TaskPriority,
         task_pool: &TaskPool,
         max_tasks: Option<usize>,
         f: F,
@@ -150,7 +150,7 @@ pub trait ParallelSliceMut<T: Send>: AsMut<[T]> {
     /// [`ParallelSliceMut::par_splat_map_mut`] for mapping when a specific chunk size is unknown.
     fn par_chunk_map_mut<F, R>(
         &mut self,
-        priority: isize,
+        priority: TaskPriority,
         task_pool: &TaskPool,
         chunk_size: usize,
         f: F,
@@ -206,7 +206,7 @@ pub trait ParallelSliceMut<T: Send>: AsMut<[T]> {
     /// [`ParallelSliceMut::par_chunk_map_mut`] for mapping when a specific chunk size is desirable.
     fn par_splat_map_mut<F, R>(
         &mut self,
-        priority: isize,
+        priority: TaskPriority,
         task_pool: &TaskPool,
         max_tasks: Option<usize>,
         f: F,

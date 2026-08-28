@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use std::thread::{self, ThreadId};
 
-use crate::executor::Executor;
+use crate::{executor::Executor, TaskPriority};
 use async_task::Task;
 use futures_lite::Future;
 
@@ -64,7 +64,7 @@ impl<'task> ThreadExecutor<'task> {
     /// Spawn a task on the thread executor
     pub fn spawn<T: Send + 'task>(
         &self,
-        priority: isize,
+        priority: TaskPriority,
         future: impl Future<Output = T> + Send + 'task,
     ) -> Task<T> {
         self.executor.spawn(priority, future)
